@@ -1,4 +1,4 @@
-import { BrowserWindow, app, ipcMain } from "electron";
+import { BrowserWindow, app, ipcMain, dialog } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -33,6 +33,24 @@ async function registerIpcHandlers() {
 
   ipcMain.handle("db:getPath", async () => {
     return getDbPath();
+  });
+
+  ipcMain.handle("export:pdf", async (_event, html: string) => {
+    const pdfWin = new BrowserWindow({
+      width: 800, height: 600, show: false,
+      webPreferences: { contextIsolation: true },
+    });
+    await pdfWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    const pdfData = await pdfWin.webContents.printToPDF({ printBackground: true });
+    pdfWin.close();
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: "导出错题 PDF",
+      defaultPath: `错题报告_${new Date().toISOString().slice(0, 10)}.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (canceled || !filePath) return false;
+    await fs.promises.writeFile(filePath, pdfData);
+    return true;
   });
 }
 

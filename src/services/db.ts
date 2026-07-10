@@ -18,6 +18,7 @@ declare global {
       readDbFile(): Promise<Uint8Array | null>;
       writeDbFile(data: Uint8Array): Promise<void>;
       getDbPath(): Promise<string>;
+      exportPdf?(html: string): Promise<boolean>;
     };
   }
 }
@@ -165,6 +166,16 @@ async function initTables() {
       value TEXT NOT NULL DEFAULT ''
     )
   `);
+
+  // Migrate: add new columns if not exist
+  for (const col of [
+    'ALTER TABLE mistakes ADD COLUMN answer TEXT DEFAULT \'\'',
+    'ALTER TABLE mistakes ADD COLUMN answer_images TEXT NOT NULL DEFAULT \'[]\'',
+    'ALTER TABLE mistakes ADD COLUMN difficulty TEXT DEFAULT \'\'',
+    'ALTER TABLE mistakes ADD COLUMN knowledge_points TEXT NOT NULL DEFAULT \'[]\'',
+  ]) {
+    try { await dbWorker.exec(col); } catch { /* column may already exist */ }
+  }
 
   await dbWorker.exec(`CREATE INDEX IF NOT EXISTS idx_mistakes_created ON mistakes(created_at)`);
   await dbWorker.exec(`CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at)`);

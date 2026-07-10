@@ -7,13 +7,7 @@
         <q-menu auto-close>
           <q-list dense>
             <q-item clickable @click="startEdit">
-              <q-item-section>编辑标签</q-item-section>
-            </q-item>
-            <q-item clickable @click="exportPdf">
-              <q-item-section>导出为 PDF</q-item-section>
-            </q-item>
-            <q-item clickable @click="printPage">
-              <q-item-section>打印</q-item-section>
+              <q-item-section>编辑</q-item-section>
             </q-item>
             <q-separator />
             <q-item clickable @click="deleteMistake" class="text-negative">
@@ -45,6 +39,10 @@
           :analysis="parsedAnalysis"
           class="q-mt-md"
         />
+        <div v-else-if="mistake.aiAnalysis && !parsedAnalysis" class="q-mt-md q-pa-md bg-grey-2 rounded-borders">
+          <div class="text-weight-medium q-mb-sm">AI 分析</div>
+          <div style="white-space: pre-wrap">{{ mistake.aiAnalysis }}</div>
+        </div>
       </div>
 
       <div class="col-12 col-md-5 q-pl-md" v-if="!editing">
@@ -54,7 +52,25 @@
           <span v-if="mistake.tags.length === 0" class="text-grey text-caption">无标签</span>
         </div>
         <div class="q-mt-sm text-grey">科目：{{ mistake.subject || '未分类' }}</div>
+        <div class="text-grey" v-if="mistake.difficulty">
+          <span>难度：{{ difficultyLabel }}</span>
+        </div>
         <div class="text-grey text-caption">创建时间：{{ mistake.createdAt }}</div>
+
+        <div class="q-mt-md" v-if="mistake.answer || mistake.answerImages.length > 0">
+          <div class="text-weight-medium">答案</div>
+          <div v-if="mistake.answer" class="q-mt-xs markdown-body" v-html="renderedAnswer" />
+          <div v-if="mistake.answerImages.length > 0" class="row q-gutter-sm q-mt-sm">
+            <div v-for="(url, idx) in mistake.answerImages" :key="idx" class="col-6">
+              <q-img :src="url" style="max-height: 200px" class="rounded-borders" />
+            </div>
+          </div>
+        </div>
+
+        <div class="q-mt-sm" v-if="mistake.knowledgePoints.length > 0">
+          <div class="text-weight-medium q-mb-sm">知识点</div>
+          <q-chip v-for="kp in mistake.knowledgePoints" :key="kp" size="sm" color="secondary" text-color="white">{{ kp }}</q-chip>
+        </div>
         <div class="q-mt-sm" v-if="mistake.notes">
           <div class="text-weight-medium">备注</div>
           <div class="text-body2">{{ mistake.notes }}</div>
@@ -98,10 +114,26 @@
         <div class="q-mb-md">
           <q-chip v-for="(tag, idx) in editTags" :key="idx" removable @remove="editTags.splice(idx, 1)" size="sm" color="primary" text-color="white">{{ tag }}</q-chip>
         </div>
+
+        <div class="text-weight-medium q-mb-sm">答案</div>
+        <q-input v-model="editAnswer" label="答案（支持 Markdown）" outlined dense autogrow type="textarea" class="q-mb-md" />
+        <ImageUploader ref="editAnswerUploaderRef" @change="onEditAnswerImagesChanged" />
+        <div v-if="editAnswerImages.length > 0" class="row q-gutter-sm q-mb-md">
+          <div v-for="(url, idx) in editAnswerImages" :key="idx" class="col-4 relative-position">
+            <q-img :src="url" style="height: 80px" class="rounded-borders" />
+            <q-btn flat round dense size="sm" icon="close" class="absolute-top-right bg-white" @click="editAnswerImages.splice(idx, 1)" />
+          </div>
+        </div>
+
+        <q-select v-model="editDifficulty" :options="difficulties" label="难度" clearable outlined dense class="q-mb-md" />
+        <q-input v-model="editKpInput" label="知识点（回车添加）" outlined dense class="q-mb-md" @keydown.enter.prevent="addEditKp" />
+        <div class="q-mb-md">
+          <q-chip v-for="(kp, idx) in editKnowledgePoints" :key="idx" removable @remove="editKnowledgePoints.splice(idx, 1)" color="secondary" text-color="white" size="sm">{{ kp }}</q-chip>
+        </div>
         <q-input v-model="editNotes" label="备注" outlined dense autogrow type="textarea" class="q-mb-md" />
         <div class="row q-gutter-sm">
           <q-btn color="primary" label="保存" @click="saveEdit" unelevated />
-          <q-btn flat label="取消" @click="editing = false" />
+          <q-btn flat label="取消" @click="cancelEdit" />
         </div>
       </div>
     </div>
@@ -119,7 +151,10 @@ import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { useMistakeStore } from '@/stores/mistakeStore';
 import AIAnalysisCard from '@/components/AIAnalysisCard.vue';
+import ImageUploader from '@/components/ImageUploader.vue';
 import { calculateSM2 } from '@/services/sm2';
+import { compressToDataUrl } from '@/services/ocrService';
+import { renderMarkdown } from '@/utils/markdown';
 
 const $q = useQuasar();
 const route = useRoute();
@@ -131,13 +166,23 @@ const editing = ref(false);
 const editTitle = ref('');
 const editSubject = ref('');
 const editTags = ref<string[]>([]);
+const editAnswer = ref('');
+const editAnswerImages = ref<string[]>([]);
+const editDifficulty = ref('');
+const editKnowledgePoints = ref<string[]>([]);
+const editKpInput = ref('');
 const editNotes = ref('');
 const editTagInput = ref('');
 
 const subjects = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
+const difficulties = ['简单', '中等', '困难'];
 const id = route.params.id as string;
 
 const mistake = computed(() => mistakeStore.getMistakeById(id));
+
+const renderedAnswer = computed(() => {
+  return mistake.value?.answer ? renderMarkdown(mistake.value.answer) : '';
+});
 
 const parsedAnalysis = computed(() => {
   if (!mistake.value?.aiAnalysis) return null;
@@ -151,6 +196,11 @@ const parsedAnalysis = computed(() => {
 const masteryLabel = computed(() => {
   const map: Record<string, string> = { fresh: '生疏', hesitant: '犹豫', smooth: '顺利' };
   return mistake.value?.masteryLevel ? map[mistake.value.masteryLevel] || '未掌握' : '未掌握';
+});
+
+const difficultyLabel = computed(() => {
+  const map: Record<string, string> = { '简单': '简单', '中等': '中等', '困难': '困难' };
+  return mistake.value?.difficulty ? map[mistake.value.difficulty] || mistake.value.difficulty : '';
 });
 
 const masteryColor = computed(() => {
@@ -171,6 +221,10 @@ watch(() => mistake.value, (m) => {
     editTitle.value = m.title;
     editSubject.value = m.subject;
     editTags.value = [...m.tags];
+    editAnswer.value = m.answer || '';
+    editAnswerImages.value = [...(m.answerImages || [])];
+    editDifficulty.value = m.difficulty || '';
+    editKnowledgePoints.value = [...(m.knowledgePoints || [])];
     editNotes.value = m.notes;
   }
 }, { immediate: true });
@@ -187,13 +241,40 @@ function addEditTag() {
   }
 }
 
+function addEditKp() {
+  const k = editKpInput.value.trim();
+  if (k && !editKnowledgePoints.value.includes(k)) {
+    editKnowledgePoints.value.push(k);
+    editKpInput.value = '';
+  }
+}
+
 function startEdit() {
   if (!mistake.value) return;
   editTitle.value = mistake.value.title;
   editSubject.value = mistake.value.subject;
   editTags.value = [...mistake.value.tags];
+  editAnswer.value = mistake.value.answer || '';
+  editAnswerImages.value = [...(mistake.value.answerImages || [])];
+  editDifficulty.value = mistake.value.difficulty || '';
+  editKnowledgePoints.value = [...(mistake.value.knowledgePoints || [])];
   editNotes.value = mistake.value.notes;
   editing.value = true;
+}
+
+function cancelEdit() {
+  editing.value = false;
+  // restore from current mistake
+  if (mistake.value) {
+    editAnswerImages.value = [...(mistake.value.answerImages || [])];
+  }
+}
+
+async function onEditAnswerImagesChanged(files: File[]) {
+  for (const file of files) {
+    const dataUrl = await compressToDataUrl(file);
+    editAnswerImages.value.push(dataUrl);
+  }
 }
 
 async function saveEdit() {
@@ -202,6 +283,10 @@ async function saveEdit() {
     title: editTitle.value,
     subject: editSubject.value,
     tags: editTags.value,
+    answer: editAnswer.value,
+    answerImages: editAnswerImages.value,
+    difficulty: editDifficulty.value,
+    knowledgePoints: editKnowledgePoints.value,
     notes: editNotes.value,
   });
   editing.value = false;
@@ -237,13 +322,5 @@ async function deleteMistake() {
 
 function openNote(noteId: string) {
   router.push({ name: 'note-detail', params: { id: noteId } });
-}
-
-function exportPdf() {
-  window.print();
-}
-
-function printPage() {
-  window.print();
 }
 </script>

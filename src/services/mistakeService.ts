@@ -9,6 +9,10 @@ function toDb(row: any): MistakeRecord {
     tags: JSON.parse(row.tags || '[]'),
     subject: row.subject || '',
     notes: row.notes || '',
+    answer: row.answer || '',
+    answerImages: JSON.parse(row.answer_images || '[]'),
+    difficulty: row.difficulty || '',
+    knowledgePoints: JSON.parse(row.knowledge_points || '[]'),
     aiAnalysis: row.ai_analysis || null,
     ocrText: row.ocr_text || null,
     createdAt: row.created_at,
@@ -30,6 +34,10 @@ function toDbRow(r: MistakeRecord) {
     JSON.stringify(r.tags),
     r.subject,
     r.notes,
+    r.answer || '',
+    JSON.stringify(r.answerImages || []),
+    r.difficulty || '',
+    JSON.stringify(r.knowledgePoints || []),
     r.aiAnalysis || null,
     r.ocrText || null,
     r.createdAt,
@@ -60,10 +68,11 @@ export async function addMistake(r: MistakeRecord): Promise<void> {
   await db.run(
     `INSERT INTO mistakes (
       id, title, image_urls, tags, subject, notes,
+      answer, answer_images, difficulty, knowledge_points,
       ai_analysis, ocr_text, created_at, updated_at,
       review_count, last_review_at, mastery_level, sm2_data,
       linked_note_ids, synced
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     toDbRow(r),
   );
   await saveDb();
@@ -77,6 +86,7 @@ export async function updateMistake(id: string, data: Partial<MistakeRecord>): P
   await db.run(
     `UPDATE mistakes SET
       title=?, image_urls=?, tags=?, subject=?, notes=?,
+      answer=?, answer_images=?, difficulty=?, knowledge_points=?,
       ai_analysis=?, ocr_text=?, updated_at=?,
       review_count=?, last_review_at=?, mastery_level=?, sm2_data=?,
       linked_note_ids=?, synced=?
@@ -87,6 +97,10 @@ export async function updateMistake(id: string, data: Partial<MistakeRecord>): P
       JSON.stringify(merged.tags),
       merged.subject,
       merged.notes,
+      merged.answer || '',
+      JSON.stringify(merged.answerImages || []),
+      merged.difficulty || '',
+      JSON.stringify(merged.knowledgePoints || []),
       merged.aiAnalysis || null,
       merged.ocrText || null,
       merged.updatedAt,

@@ -34,4 +34,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   readDbFile: () => ipcRenderer.invoke("db:read"),
   writeDbFile: (data: Uint8Array) => ipcRenderer.invoke("db:write", data.buffer),
   getDbPath: () => ipcRenderer.invoke("db:getPath"),
+  exportPdf: (html: string) => ipcRenderer.invoke("export:pdf", html),
 });

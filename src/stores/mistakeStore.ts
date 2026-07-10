@@ -15,6 +15,10 @@ export interface MistakeRecord {
   tags: string[];
   subject: string;
   notes: string;
+  answer: string;
+  answerImages: string[];
+  difficulty: string;
+  knowledgePoints: string[];
   aiAnalysis: string | null;
   ocrText: string | null;
   createdAt: string;
@@ -81,7 +85,7 @@ export const useMistakeStore = defineStore('mistake', {
       await dbUpdate(id, data);
       const idx = this.mistakes.findIndex((m) => m.id === id);
       if (idx !== -1) {
-        this.mistakes[idx] = { ...this.mistakes[idx], ...data, updatedAt: new Date().toISOString() };
+        this.mistakes[idx] = { ...this.mistakes[idx], ...(data as MistakeRecord), updatedAt: new Date().toISOString() } as MistakeRecord;
       }
     },
     async removeMistake(id: string) {
