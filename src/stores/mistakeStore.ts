@@ -1,4 +1,12 @@
 import { defineStore } from 'pinia';
+import {
+  fetchMistakes,
+  fetchMistakeById,
+  addMistake as dbAdd,
+  updateMistake as dbUpdate,
+  deleteMistake as dbDelete,
+  searchMistakes,
+} from '@/services/mistakeService';
 
 export interface MistakeRecord {
   id: string;
@@ -45,17 +53,48 @@ export const useMistakeStore = defineStore('mistake', {
   },
 
   actions: {
-    addMistake(record: MistakeRecord) {
-      this.mistakes.unshift(record);
-    },
-    updateMistake(id: string, data: Partial<MistakeRecord>) {
-      const idx = this.mistakes.findIndex((m) => m.id === id);
-      if (idx !== -1) {
-        this.mistakes[idx] = { ...this.mistakes[idx], ...data };
+    async fetchAll() {
+      this.loading = true;
+      try {
+        this.mistakes = await fetchMistakes();
+      } catch (e) {
+        console.error('Failed to fetch mistakes:', e);
+        this.mistakes = [];
+      } finally {
+        this.loading = false;
       }
     },
-    removeMistake(id: string) {
+    async fetchOne(id: string) {
+      const record = await fetchMistakeById(id);
+      if (record) {
+        const idx = this.mistakes.findIndex((m) => m.id === id);
+        if (idx !== -1) this.mistakes[idx] = record;
+        else this.mistakes.unshift(record);
+      }
+      return record;
+    },
+    async addMistake(record: MistakeRecord) {
+      await dbAdd(record);
+      this.mistakes.unshift(record);
+    },
+    async updateMistake(id: string, data: Partial<MistakeRecord>) {
+      await dbUpdate(id, data);
+      const idx = this.mistakes.findIndex((m) => m.id === id);
+      if (idx !== -1) {
+        this.mistakes[idx] = { ...this.mistakes[idx], ...data, updatedAt: new Date().toISOString() };
+      }
+    },
+    async removeMistake(id: string) {
+      await dbDelete(id);
       this.mistakes = this.mistakes.filter((m) => m.id !== id);
+    },
+    async search(params: { subject?: string; tags?: string; dateFrom?: string; dateTo?: string }) {
+      this.loading = true;
+      try {
+        this.mistakes = await searchMistakes(params);
+      } finally {
+        this.loading = false;
+      }
     },
     setCurrentMistake(mistake: MistakeRecord | null) {
       this.currentMistake = mistake;

@@ -22,10 +22,16 @@
  * https://www.electronjs.org/docs/latest/tutorial/tutorial-preload
  */
 
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 import { quasarRuntime } from "#q-app/electron/preload";
 
 /**
  * Can be used in the renderer process through `window.quasarRuntime`
  */
 contextBridge.exposeInMainWorld("quasarRuntime", quasarRuntime);
+
+contextBridge.exposeInMainWorld("electronAPI", {
+  readDbFile: () => ipcRenderer.invoke("db:read"),
+  writeDbFile: (data: Uint8Array) => ipcRenderer.invoke("db:write", data.buffer),
+  getDbPath: () => ipcRenderer.invoke("db:getPath"),
+});

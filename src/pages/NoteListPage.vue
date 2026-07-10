@@ -15,11 +15,11 @@
       </template>
     </q-input>
 
-    <q-list bordered separator v-if="notes.length > 0">
-      <q-item v-for="note in notes" :key="note.id" clickable :to="{ name: 'note-detail', params: { id: note.id } }">
+    <q-list bordered separator v-if="noteStore.notes.length > 0">
+      <q-item v-for="note in noteStore.notes" :key="note.id" clickable :to="{ name: 'note-detail', params: { id: note.id } }">
         <q-item-section>
           <q-item-label class="text-weight-medium">{{ note.title }}</q-item-label>
-          <q-item-label caption lines="2">{{ note.summary }}</q-item-label>
+          <q-item-label caption lines="2">{{ note.plainText }}</q-item-label>
           <div class="q-mt-xs">
             <q-chip v-for="tag in note.tags" :key="tag" size="xs" color="secondary" text-color="white">{{ tag }}</q-chip>
           </div>
@@ -38,23 +38,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { useNoteStore } from '@/stores/noteStore';
 
 const router = useRouter();
+const noteStore = useNoteStore();
 const search = ref('');
-
-interface Note {
-  id: string;
-  title: string;
-  summary: string;
-  tags: string[];
-  updatedAt: string;
-}
-
-const notes = ref<Note[]>([]);
 
 function addNote() {
   router.push({ name: 'note-detail', query: { new: 'true' } });
 }
+
+onMounted(async () => {
+  await noteStore.fetchAll();
+});
 </script>

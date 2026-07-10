@@ -4,47 +4,70 @@
       <div class="col">
         <h5 class="q-my-none text-weight-medium">错题列表</h5>
       </div>
-      <div class="col-auto desktop-only">
+      <div class="col-auto">
+        <q-btn flat round dense icon="filter_list" class="lt-md q-mr-sm" @click="showMobileFilter = !showMobileFilter" />
         <q-btn color="primary" icon="add" label="添加错题" @click="showAddDialog = true" no-caps unelevated />
       </div>
     </div>
 
-    <div class="row q-mb-md">
-      <div class="col-12 col-md-3 q-pr-md">
+    <div class="row q-mb-md" :class="{ 'lt-md': !showMobileFilter }">
+      <div class="col-12 col-md-3 q-pr-md q-mb-sm q-mb-md-none">
         <q-select v-model="filters.subject" :options="subjects" label="科目" clearable outlined dense />
       </div>
-      <div class="col-12 col-md-3 q-pr-md q-mt-sm q-mt-md-none">
+      <div class="col-12 col-md-3 q-pr-md q-mb-sm q-mb-md-none">
         <q-input v-model="filters.tags" label="标签" outlined dense />
       </div>
-      <div class="col-12 col-md-3 q-pr-md q-mt-sm q-mt-md-none">
-        <q-input v-model="filters.dateRange" label="时间范围" outlined dense>
+      <div class="col-12 col-md-3 q-pr-md q-mb-sm q-mb-md-none">
+        <q-input v-model="filters.dateRange" label="时间范围 (YYYY-MM-DD~YYYY-MM-DD)" outlined dense>
           <template v-slot:append>
             <q-icon name="event" class="cursor-pointer" />
           </template>
         </q-input>
       </div>
-      <div class="col-12 col-md-3 q-mt-sm q-mt-md-none">
-        <q-btn label="搜索" color="primary" unelevated class="full-width" @click="loadMistakes" />
+      <div class="col-12 col-md-3 q-mb-sm q-mb-md-none">
+        <q-btn label="搜索" color="primary" unelevated class="full-width" @click="doSearch" />
+        <q-btn v-if="hasActiveFilters" flat label="清除" color="grey" unelevated class="full-width q-mt-xs" @click="clearFilters" />
       </div>
     </div>
 
-    <q-list bordered separator v-if="mistakes.length > 0">
-      <q-item v-for="mistake in mistakes" :key="mistake.id" clickable :to="{ name: 'mistake-detail', params: { id: mistake.id } }">
+    <div v-if="reviewList.length > 0" class="q-mb-lg">
+      <div class="row items-center q-mb-sm">
+        <h6 class="q-my-none text-weight-medium">今日复习 ({{ reviewList.length }})</h6>
+        <q-space />
+        <q-btn flat color="primary" label="开始回顾" :to="{ name: 'review' }" no-caps unelevated />
+      </div>
+      <q-list bordered separator>
+        <q-item v-for="m in reviewList" :key="m.id" clickable :to="{ name: 'mistake-detail', params: { id: m.id } }">
+          <q-item-section avatar>
+            <div v-if="m.imageUrls[0]" class="rounded-borders" :style="{ width: '50px', height: '50px', backgroundImage: `url(${m.imageUrls[0]})`, backgroundSize: 'cover', backgroundPosition: 'center' }" />
+            <div v-else class="bg-grey-3 rounded-borders" style="width: 50px; height: 50px" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>{{ m.title }}</q-item-label>
+            <q-item-label caption>{{ m.subject || '未分类' }} · 复习 {{ m.reviewCount }} 次</q-item-label>
+          </q-item-section>
+        </q-item>
+      </q-list>
+      <q-separator class="q-my-md" />
+    </div>
+
+    <q-list bordered separator v-if="filteredMistakes.length > 0">
+      <q-item v-for="mistake in filteredMistakes" :key="mistake.id" clickable :to="{ name: 'mistake-detail', params: { id: mistake.id } }">
         <q-item-section avatar>
-          <q-img v-if="mistake.coverUrl" :src="mistake.coverUrl" style="width: 60px; height: 60px" class="rounded-borders" />
+          <div v-if="mistake.imageUrls[0]" class="rounded-borders" :style="{ width: '60px', height: '60px', backgroundImage: `url(${mistake.imageUrls[0]})`, backgroundSize: 'cover', backgroundPosition: 'center' }" />
           <div v-else class="bg-grey-3 rounded-borders" style="width: 60px; height: 60px" />
         </q-item-section>
         <q-item-section>
           <q-item-label>{{ mistake.title }}</q-item-label>
-          <q-item-label caption lines="2">{{ mistake.tags?.join(', ') }}</q-item-label>
+          <q-item-label caption lines="1">{{ mistake.tags?.join(', ') }}</q-item-label>
+          <q-item-label caption class="text-weight-medium" :class="masteryClass(mistake.masteryLevel)">
+            {{ masterLabel(mistake.masteryLevel) }} · 复习 {{ mistake.reviewCount }} 次 · {{ formatDate(mistake.createdAt) }}
+          </q-item-label>
         </q-item-section>
         <q-item-section side>
           <q-btn flat round icon="more_vert">
             <q-menu auto-close>
               <q-list>
-                <q-item clickable @click="doAiAnalysis(mistake.id)">
-                  <q-item-section>AI 解析</q-item-section>
-                </q-item>
                 <q-item clickable @click="deleteMistake(mistake.id)">
                   <q-item-section class="text-negative">删除</q-item-section>
                 </q-item>
@@ -55,7 +78,12 @@
       </q-item>
     </q-list>
 
-    <div v-else class="text-center q-mt-xl text-grey">
+    <div v-if="mistakeStore.mistakes.length > 0 && filteredMistakes.length === 0" class="text-center q-mt-xl text-grey">
+      <q-icon name="search_off" size="64px" />
+      <p class="q-mt-sm">没有匹配的错题</p>
+      <q-btn flat label="清除筛选" color="primary" @click="clearFilters" no-caps />
+    </div>
+    <div v-else-if="mistakeStore.mistakes.length === 0" class="text-center q-mt-xl text-grey">
       <q-icon name="error_outline" size="64px" />
       <p class="q-mt-sm">暂无错题记录</p>
       <q-btn color="primary" label="添加第一道错题" @click="showAddDialog = true" />
@@ -68,26 +96,17 @@
           <q-space />
           <q-btn flat round dense icon="close" v-close-popup />
         </q-card-section>
-
         <q-card-section class="scroll" style="max-height: 80vh">
           <ImageUploader ref="imageUploaderRef" @change="onImagesChanged" />
-
           <q-select v-model="form.subject" :options="subjects" label="科目" clearable outlined dense class="q-mb-md" />
-
           <q-input v-model="form.tagInput" label="标签（回车添加）" outlined dense class="q-mb-md" @keydown.enter.prevent="addTag">
-            <template v-slot:append>
-              <q-btn flat round dense icon="add" @click="addTag" />
-            </template>
+            <template v-slot:append><q-btn flat round dense icon="add" @click="addTag" /></template>
           </q-input>
           <div class="q-mb-md">
-            <q-chip v-for="(tag, idx) in form.tags" :key="idx" removable @remove="form.tags.splice(idx, 1)" color="primary" text-color="white" size="sm">
-              {{ tag }}
-            </q-chip>
+            <q-chip v-for="(tag, idx) in form.tags" :key="idx" removable @remove="form.tags.splice(idx, 1)" color="primary" text-color="white" size="sm">{{ tag }}</q-chip>
           </div>
-
           <q-input v-model="form.notes" label="备注" outlined dense autogrow type="textarea" class="q-mb-md" />
         </q-card-section>
-
         <q-card-actions align="right" class="q-pa-md">
           <q-btn flat label="取消" v-close-popup />
           <q-btn color="primary" label="保存错题" :disable="!canSave" :loading="saving" @click="saveMistake" unelevated />
@@ -103,7 +122,7 @@ import { useQuasar } from 'quasar';
 import { uid } from 'quasar';
 import { useMistakeStore } from '@/stores/mistakeStore';
 import ImageUploader from '@/components/ImageUploader.vue';
-import { compressImage } from '@/services/ocrService';
+import { compressToDataUrl } from '@/services/ocrService';
 
 const $q = useQuasar();
 const mistakeStore = useMistakeStore();
@@ -113,6 +132,7 @@ const saving = ref(false);
 const imageUploaderRef = ref<InstanceType<typeof ImageUploader>>();
 const uploadedImages = ref<File[]>([]);
 const savedImageUrls = ref<string[]>([]);
+const showMobileFilter = ref(false);
 
 const form = reactive({
   subject: null as string | null,
@@ -129,16 +149,7 @@ const filters = reactive({
   dateRange: '',
 });
 
-interface MistakeItem {
-  id: string;
-  title: string;
-  coverUrl: string;
-  tags: string[];
-  subject: string;
-  createdAt: string;
-}
-
-const mistakes = ref<MistakeItem[]>([]);
+const reviewList = computed(() => mistakeStore.todayReviewMistakes);
 
 const canSave = computed(() => uploadedImages.value.length > 0 || savedImageUrls.value.length > 0);
 
@@ -157,19 +168,14 @@ function onImagesChanged(files: File[]) {
 async function saveMistake() {
   if (!canSave.value) return;
   saving.value = true;
-
   try {
     const imageUrls: string[] = [];
-
     for (const file of uploadedImages.value) {
-      const blob = await compressImage(file);
-      const url = URL.createObjectURL(blob);
-      imageUrls.push(url);
+      const dataUrl = await compressToDataUrl(file);
+      imageUrls.push(dataUrl);
     }
-
     const now = new Date().toISOString();
     const id = uid();
-
     const record = {
       id,
       title: `未命名错题 ${new Date().toLocaleDateString()}`,
@@ -188,20 +194,9 @@ async function saveMistake() {
       linkedNoteIds: [],
       synced: false,
     };
-
-    mistakeStore.addMistake(record as any);
-    mistakes.value.unshift({
-      id,
-      title: record.title,
-      coverUrl: imageUrls[0] || '',
-      tags: record.tags,
-      subject: record.subject,
-      createdAt: new Date().toLocaleDateString(),
-    });
-
+    await mistakeStore.addMistake(record as any);
     showAddDialog.value = false;
     resetForm();
-
     $q.notify({ type: 'positive', message: '错题已保存', timeout: 2000 });
   } catch (e: any) {
     $q.notify({ type: 'negative', message: `保存失败：${e.message}`, timeout: 3000 });
@@ -219,35 +214,74 @@ function resetForm() {
   savedImageUrls.value = [];
 }
 
-function loadMistakes() {
-  mistakes.value = mistakeStore.mistakes.map((m) => ({
-    id: m.id,
-    title: m.title,
-    coverUrl: m.imageUrls[0] || '',
-    tags: m.tags,
-    subject: m.subject,
-    createdAt: m.createdAt ? new Date(m.createdAt).toLocaleDateString() : '',
-  }));
-}
-
 function deleteMistake(id: string) {
   $q.dialog({
     title: '确认删除',
     message: '确定要删除这道错题吗？',
     cancel: true,
     persistent: true,
-  }).onOk(() => {
-    mistakeStore.removeMistake(id);
-    loadMistakes();
+  }).onOk(async () => {
+    await mistakeStore.removeMistake(id);
     $q.notify({ type: 'positive', message: '已删除', timeout: 1500 });
   });
 }
 
-function doAiAnalysis(id: string) {
-  $q.notify({ type: 'info', message: 'AI 解析功能将在后续版本实现', timeout: 2000 });
+const filteredMistakes = computed(() => {
+  let result = mistakeStore.mistakes;
+
+  if (filters.subject) {
+    result = result.filter(m => m.subject === filters.subject);
+  }
+  if (filters.tags) {
+    const q = filters.tags.toLowerCase();
+    result = result.filter(m =>
+      m.tags.some(t => t.toLowerCase().includes(q))
+    );
+  }
+  if (filters.dateRange) {
+    const parts = filters.dateRange.split(/[~\-\/]/).map(s => s.trim()).filter(Boolean);
+    const from = parts[0] ? new Date(parts[0]).getTime() : null;
+    const to = parts[1] ? new Date(parts[1]).getTime() + 86400000 : null;
+    result = result.filter(m => {
+      const d = new Date(m.createdAt).getTime();
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    });
+  }
+
+  return result;
+});
+
+const hasActiveFilters = computed(() =>
+  filters.subject !== null || filters.tags !== '' || filters.dateRange !== ''
+);
+
+function masterLabel(level: string | null): string {
+  const map: Record<string, string> = { fresh: '生疏', hesitant: '犹豫', smooth: '顺利' };
+  return level ? map[level] || '未掌握' : '未掌握';
 }
 
-onMounted(() => {
-  loadMistakes();
+function masteryClass(level: string | null): string {
+  const map: Record<string, string> = { fresh: 'text-negative', hesitant: 'text-orange', smooth: 'text-positive' };
+  return level ? map[level] || '' : '';
+}
+
+function formatDate(d: string): string {
+  return d ? d.slice(0, 10) : '';
+}
+
+async function doSearch() {
+  $q.notify({ type: 'info', message: `找到 ${filteredMistakes.value.length} 条结果`, timeout: 1500 });
+}
+
+function clearFilters() {
+  filters.subject = null;
+  filters.tags = '';
+  filters.dateRange = '';
+}
+
+onMounted(async () => {
+  await mistakeStore.fetchAll();
 });
 </script>

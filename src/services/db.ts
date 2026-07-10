@@ -1,27 +1,110 @@
 import { wrap, Remote } from 'comlink';
 
+const LS_KEY = 'mistake_note_db';
+
 export interface IDBWorker {
-  init(): Promise<void>;
+  init(existingData?: Uint8Array): Promise<void>;
   exec(sql: string, params?: any[]): Promise<any>;
   get(sql: string, params?: any[]): Promise<any>;
   all(sql: string, params?: any[]): Promise<any[]>;
   run(sql: string, params?: any[]): Promise<{ changes: number; lastID: number }>;
+  exportDb(): Promise<Uint8Array>;
   close(): Promise<void>;
+}
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      readDbFile(): Promise<Uint8Array | null>;
+      writeDbFile(data: Uint8Array): Promise<void>;
+      getDbPath(): Promise<string>;
+    };
+  }
 }
 
 let dbWorker: Remote<IDBWorker> | null = null;
 let initialized = false;
 
+function uint8ArrayToBase64(u8: Uint8Array): string {
+  const chars: string[] = [];
+  for (let i = 0; i < u8.length; i++) {
+    chars.push(String.fromCharCode(u8[i]!));
+  }
+  return btoa(chars.join(''));
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function loadDbFromDisk(): Promise<Uint8Array | undefined> {
+  if (window.electronAPI) {
+    try {
+      const data = await window.electronAPI.readDbFile();
+      if (data) return data;
+    } catch {
+      // electronAPI present but read failed
+    }
+  }
+  const ls = localStorage.getItem(LS_KEY);
+  if (ls) {
+    try {
+      return base64ToUint8Array(ls);
+    } catch {
+      localStorage.removeItem(LS_KEY);
+    }
+  }
+  return undefined;
+}
+
+async function saveDbToDisk(data: Uint8Array): Promise<boolean> {
+  // Save to localStorage as base64 (universal fallback)
+  try {
+    localStorage.setItem(LS_KEY, uint8ArrayToBase64(data));
+  } catch (e) {
+    console.warn('localStorage save failed:', e);
+  }
+
+  // Also save via Electron IPC if available
+  if (window.electronAPI) {
+    try {
+      await window.electronAPI.writeDbFile(data);
+      return true;
+    } catch (e) {
+      console.error('Electron IPC save failed:', e);
+      return false;
+    }
+  }
+  return false;
+}
+
 export async function getDb(): Promise<Remote<IDBWorker>> {
   if (dbWorker && initialized) return dbWorker;
 
-  const Worker = new Worker(new URL('@/workers/dbWorker.ts', import.meta.url), { type: 'module' });
-  dbWorker = wrap<IDBWorker>(Worker);
-  await dbWorker.init();
+  const wrk = new Worker(new URL('@/workers/dbWorker.ts', import.meta.url), { type: 'module' });
+  dbWorker = wrap<IDBWorker>(wrk);
+
+  const existingData = await loadDbFromDisk();
+  await dbWorker.init(existingData);
   initialized = true;
 
   await initTables();
   return dbWorker;
+}
+
+export async function saveDb(): Promise<void> {
+  if (!dbWorker || !initialized) return;
+  try {
+    const data = await dbWorker.exportDb();
+    await saveDbToDisk(data);
+  } catch (e) {
+    console.error('Failed to save database:', e);
+  }
 }
 
 async function initTables() {

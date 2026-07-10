@@ -122,12 +122,14 @@ function toggleLeftDrawer() {
 
 const navLinks = [
   { label: '错题列表', icon: 'error_outline', to: { name: 'mistake-list' } },
+  { label: '错题回顾', icon: 'autorenew', to: { name: 'review' } },
   { label: '笔记列表', icon: 'note_alt', to: { name: 'note-list' } },
   { label: '日历统计', icon: 'calendar_month', to: { name: 'calendar' } },
 ];
 
 const bottomTabs = [
   { name: 'mistake-list', label: '错题', icon: 'error_outline' },
+  { name: 'review', label: '回顾', icon: 'autorenew' },
   { name: 'note-list', label: '笔记', icon: 'note_alt' },
   { name: 'calendar', label: '统计', icon: 'calendar_month' },
   { name: 'settings', label: '设置', icon: 'settings' },

@@ -1,14 +1,16 @@
-import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
+import initSqlJs from 'sql.js';
 import { expose } from 'comlink';
+import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 
-let db: SqlJsDatabase | null = null;
+let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
+let db: ReturnType<typeof SQL.Database> | null = null;
 
 const dbWorker = {
-  async init(): Promise<void> {
-    const SQL = await initSqlJs({
-      locateFile: (file: string) => `https://sql.js.org/dist/${file}`,
+  async init(existingData?: Uint8Array): Promise<void> {
+    SQL = await initSqlJs({
+      locateFile: () => wasmUrl,
     });
-    db = new SQL.Database();
+    db = existingData ? new SQL.Database(existingData) : new SQL.Database();
     db.run('PRAGMA journal_mode=WAL');
   },
 
@@ -52,6 +54,11 @@ const dbWorker = {
       changes: db.getRowsModified(),
       lastID: 0,
     };
+  },
+
+  exportDb(): Uint8Array {
+    if (!db) throw new Error('Database not initialized');
+    return db.export();
   },
 
   close(): void {
