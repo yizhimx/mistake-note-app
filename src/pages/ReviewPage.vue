@@ -51,46 +51,60 @@
         <div class="row items-center">
           <q-btn flat round dense icon="arrow_back" @click="exitReview" />
           <div class="text-caption text-grey q-ml-sm">
-            {{ currentIndex + 1 }} / {{ totalCount }}
+            {{ currentIndex + 1 }} / {{ reviewQueue.length }}
           </div>
           <q-space />
+          <q-chip v-if="currentReview && !currentReview.sm2Data" size="xs" color="info" text-color="white">新题</q-chip>
           <q-btn flat round dense icon="close" @click="exitReview" />
         </div>
-        <q-linear-progress :value="currentIndex / totalCount" color="primary" class="q-mt-xs" rounded size="6px" />
+        <q-linear-progress :value="reviewQueue.length > 0 ? (currentIndex + 1) / reviewQueue.length : 0" color="primary" class="q-mt-xs" rounded size="6px" />
       </div>
 
-      <div class="review-card" :class="{ flipped: showAnswer }" @click="showAnswer = true" v-if="currentReview">
-        <div class="card-face card-front">
-          <div class="card-content">
-            <img v-if="currentReview.imageUrls[0]" :src="currentReview.imageUrls[0]" class="card-image" />
-            <div class="card-title">{{ currentReview.title }}</div>
-            <div class="card-subtitle" v-if="currentReview.subject">
-              <q-chip size="xs" color="primary" text-color="white">{{ currentReview.subject }}</q-chip>
-              <q-chip v-if="!currentReview.sm2Data" size="xs" color="info" text-color="white">新题</q-chip>
+      <div class="review-card" v-if="currentReview">
+        <div class="card-scroll">
+          <!-- Question side -->
+          <div v-if="showQuestion">
+            <div v-if="currentReview.imageUrls.length > 0" class="card-images">
+              <q-carousel v-model="slide" animated arrows navigation infinite class="rounded-borders" style="max-height: 250px">
+                <q-carousel-slide v-for="(url, idx) in currentReview.imageUrls" :key="idx" :name="idx">
+                  <img :src="url" class="full-height full-width" style="object-fit: contain" />
+                </q-carousel-slide>
+              </q-carousel>
+            </div>
+            <div class="card-question">
+              <div class="card-title">{{ currentReview.title }}</div>
+              <div class="card-meta">
+                <q-chip size="xs" color="primary" text-color="white">{{ currentReview.subject || '未分类' }}</q-chip>
+                <q-chip v-if="currentReview.difficulty" size="xs" color="orange" text-color="white">{{ currentReview.difficulty }}</q-chip>
+                <q-chip v-if="currentReview.tags.length > 0" size="xs" color="secondary" text-color="white">{{ currentReview.tags.slice(0, 3).join(', ') }}</q-chip>
+              </div>
             </div>
           </div>
-          <div class="card-hint text-grey">
-            <q-icon name="touch_app" size="sm" class="q-mr-xs" />
-            点击或按空格显示答案
-          </div>
-        </div>
 
-        <div class="card-face card-back">
-          <div class="card-content">
-            <img v-if="currentReview.imageUrls[0]" :src="currentReview.imageUrls[0]" class="card-image" />
-            <div class="card-title">{{ currentReview.title }}</div>
-            <div class="card-tags q-my-sm">
-              <q-chip v-for="t in currentReview.tags" :key="t" size="xs" color="secondary" text-color="white">{{ t }}</q-chip>
+          <!-- Answer side -->
+          <div v-else>
+            <div class="card-section" v-if="currentReview.answerImages.length > 0">
+              <div class="text-weight-medium q-mb-sm">答案图片</div>
+              <div class="row q-gutter-sm">
+                <div v-for="(url, idx) in currentReview.answerImages" :key="idx" class="col-6">
+                  <q-img :src="url" style="max-height: 180px" class="rounded-borders" />
+                </div>
+              </div>
             </div>
-            <q-separator class="q-my-md" />
-            <div v-if="currentReview.notes" class="card-notes">
-              <div class="text-weight-medium text-grey-8">备注</div>
-              <div class="text-body1 q-mt-xs" style="white-space: pre-wrap">{{ currentReview.notes }}</div>
+            <div class="card-section" v-if="currentReview.answer">
+              <div class="text-weight-medium q-mb-sm">答案</div>
+              <div class="text-body1" v-html="renderedAnswer" />
             </div>
-            <div v-else class="text-grey text-center">无额外备注</div>
-            <div class="card-stats q-mt-md text-caption text-grey">
-              已复习 {{ currentReview.reviewCount }} 次
-              <span v-if="currentReview.lastReviewAt"> · 上次 {{ currentReview.lastReviewAt.slice(0, 10) }}</span>
+            <div class="card-section" v-if="currentReview.notes">
+              <div class="text-weight-medium q-mb-sm">备注</div>
+              <div class="text-body2" style="white-space: pre-wrap">{{ currentReview.notes }}</div>
+            </div>
+            <div class="card-section" v-if="currentReview.knowledgePoints.length > 0">
+              <div class="text-weight-medium q-mb-sm">知识点</div>
+              <q-chip v-for="kp in currentReview.knowledgePoints" :key="kp" size="xs" color="secondary" text-color="white">{{ kp }}</q-chip>
+            </div>
+            <div v-if="!currentReview.answer && !currentReview.answerImages.length && !currentReview.notes && !currentReview.knowledgePoints.length" class="text-grey text-center q-pa-lg">
+              暂无答案内容
             </div>
           </div>
         </div>
@@ -104,39 +118,45 @@
         </div>
       </div>
 
-      <transition name="slide-up">
-        <div v-if="showAnswer" class="rating-bar">
-          <div class="rating-label text-caption text-grey-7 q-mb-xs text-center">掌握程度</div>
-          <div class="row q-gutter-sm justify-center">
-            <q-btn class="rating-btn col-3" unelevated no-caps color="negative" push @click="rate('fresh')">
-              <div class="column items-center">
-                <span class="text-weight-bold">重来</span>
-                <span class="text-caption">1</span>
-              </div>
-            </q-btn>
-            <q-btn class="rating-btn col-3" unelevated no-caps color="deep-orange" push @click="rate('hesitant')">
-              <div class="column items-center">
-                <span class="text-weight-bold">困难</span>
-                <span class="text-caption">2</span>
-              </div>
-            </q-btn>
-            <q-btn class="rating-btn col-3" unelevated no-caps color="positive" push @click="rate('smooth')">
-              <div class="column items-center">
-                <span class="text-weight-bold">良好</span>
-                <span class="text-caption">3</span>
-              </div>
-            </q-btn>
-            <q-btn class="rating-btn col-3" unelevated no-caps color="primary" push @click="rate('easy')">
-              <div class="column items-center">
-                <span class="text-weight-bold">简单</span>
-                <span class="text-caption">4</span>
-              </div>
-            </q-btn>
-          </div>
+      <div v-if="currentReview" class="action-bar">
+        <div class="row q-gutter-sm">
+          <q-btn class="col" unelevated no-caps outline color="grey" icon="skip_previous" label="上一题" :disable="currentIndex === 0" @click="prevCard" />
+          <q-btn class="col" unelevated no-caps :color="isLast ? 'positive' : 'grey'" :icon="isLast ? 'check' : 'skip_next'" :label="isLast ? '完成复习' : '下一题'" @click="skip" />
+          <q-btn class="col" unelevated no-caps :color="showQuestion ? 'orange' : 'primary'" :icon="showQuestion ? 'visibility_off' : 'visibility'" :label="showQuestion ? '看答案' : '看题目'" @click="toggleView" />
+          <q-btn class="col" unelevated no-caps color="positive" icon="thumb_up" label="评价" @click="showRating = true" />
         </div>
-      </transition>
 
-      <q-btn v-if="!showAnswer" flat icon="skip_next" label="跳过" class="skip-btn" @click="skip" />
+        <q-slide-transition>
+          <div v-if="showRating" class="q-mt-md">
+            <div class="row q-gutter-sm justify-center">
+              <q-btn class="rating-btn col-3" unelevated no-caps color="negative" push @click="rate('fresh')">
+                <div class="column items-center">
+                  <span class="text-weight-bold">重来</span>
+                  <span class="text-caption">1</span>
+                </div>
+              </q-btn>
+              <q-btn class="rating-btn col-3" unelevated no-caps color="deep-orange" push @click="rate('hesitant')">
+                <div class="column items-center">
+                  <span class="text-weight-bold">困难</span>
+                  <span class="text-caption">2</span>
+                </div>
+              </q-btn>
+              <q-btn class="rating-btn col-3" unelevated no-caps color="positive" push @click="rate('smooth')">
+                <div class="column items-center">
+                  <span class="text-weight-bold">良好</span>
+                  <span class="text-caption">3</span>
+                </div>
+              </q-btn>
+              <q-btn class="rating-btn col-3" unelevated no-caps color="primary" push @click="rate('easy')">
+                <div class="column items-center">
+                  <span class="text-weight-bold">简单</span>
+                  <span class="text-caption">4</span>
+                </div>
+              </q-btn>
+            </div>
+          </div>
+        </q-slide-transition>
+      </div>
     </div>
   </q-page>
 </template>
@@ -146,6 +166,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { useMistakeStore, type MistakeRecord } from '@/stores/mistakeStore';
 import { calculateSM2 } from '@/services/sm2';
+import { renderMarkdown } from '@/utils/markdown';
 
 const SAVE_KEY = 'review_progress';
 
@@ -154,10 +175,16 @@ const mistakeStore = useMistakeStore();
 
 const inReview = ref(false);
 const showAnswer = ref(false);
+const showRating = ref(false);
+const showQuestion = ref(true);
+const slide = ref(0);
 const currentReview = ref<MistakeRecord | null>(null);
 const reviewQueue = ref<MistakeRecord[]>([]);
 const currentIndex = ref(0);
-const totalCount = ref(0);
+
+const renderedAnswer = computed(() => {
+  return currentReview.value?.answer ? renderMarkdown(currentReview.value.answer) : '';
+});
 
 const reviewItems = computed(() => {
   return mistakeStore.mistakes.filter(m => {
@@ -172,15 +199,16 @@ const reviewItems = computed(() => {
 interface SavedProgress {
   queue: string[];
   index: number;
-  total: number;
 }
+
+const isLast = computed(() => currentReview.value !== null && currentIndex.value >= reviewQueue.value.length - 1);
 
 const savedProgress = ref<SavedProgress | null>(null);
 
 function saveProgress() {
   const ids = reviewQueue.value.slice(currentIndex.value).map(m => m.id);
   if (ids.length === 0) return;
-  const data: SavedProgress = { queue: ids, index: currentIndex.value, total: totalCount.value };
+  const data: SavedProgress = { queue: ids, index: currentIndex.value };
   localStorage.setItem(SAVE_KEY, JSON.stringify(data));
 }
 
@@ -204,9 +232,10 @@ function resumeReview() {
   const ordered = prog.queue.map(id => items.find(m => m.id === id)).filter(Boolean) as MistakeRecord[];
   if (ordered.length === 0) { clearProgress(); return; }
   reviewQueue.value = ordered;
-  totalCount.value = prog.total;
   currentIndex.value = 0;
   showAnswer.value = false;
+  showRating.value = false;
+  showQuestion.value = true;
   currentReview.value = reviewQueue.value[0];
   inReview.value = true;
   clearProgress();
@@ -214,24 +243,38 @@ function resumeReview() {
 
 function startReview() {
   reviewQueue.value = [...reviewItems.value];
-  totalCount.value = reviewQueue.value.length;
   currentIndex.value = 0;
   showAnswer.value = false;
+  showRating.value = false;
+  showQuestion.value = true;
   if (reviewQueue.value.length > 0) {
     currentReview.value = reviewQueue.value[currentIndex.value];
     inReview.value = true;
   }
 }
 
+function toggleView() {
+  showQuestion.value = !showQuestion.value;
+}
+
 function nextCard() {
   currentIndex.value++;
+  showQuestion.value = true;
+  showRating.value = false;
   if (currentIndex.value < reviewQueue.value.length) {
     currentReview.value = reviewQueue.value[currentIndex.value];
-    showAnswer.value = false;
   } else {
     currentReview.value = null;
     $q.notify({ type: 'positive', message: '本轮回顾完成！', timeout: 2000 });
   }
+}
+
+function prevCard() {
+  if (currentIndex.value <= 0) return;
+  currentIndex.value--;
+  currentReview.value = reviewQueue.value[currentIndex.value];
+  showQuestion.value = true;
+  showRating.value = false;
 }
 
 function exitReview() {
@@ -267,36 +310,27 @@ async function rate(label: string) {
     reviewCount: m.reviewCount + 1,
     lastReviewAt: new Date().toISOString(),
   });
-  nextCard();
+  $q.notify({ type: 'positive', message: '已评价', timeout: 1000 });
+  showRating.value = false;
 }
 
 function skip() {
-  if (currentReview.value) {
-    reviewQueue.value.push(currentReview.value);
-  }
   nextCard();
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (!inReview.value) return;
+  if (!inReview.value || !currentReview.value) return;
   if (e.key === 'Escape') { exitReview(); return; }
-  if (!showAnswer.value) {
-    if (e.key === ' ' || e.key === 'Space' || e.key === 'Enter') {
-      e.preventDefault();
-      showAnswer.value = true;
-    }
-  } else {
+  if (e.key === ' ' || e.key === 'Space') {
+    e.preventDefault();
+    toggleView();
+  }
+  if (showRating.value) {
     switch (e.key) {
       case '1': rate('fresh'); break;
       case '2': rate('hesitant'); break;
       case '3': rate('smooth'); break;
       case '4': rate('easy'); break;
-      case ' ':
-      case 'Space':
-      case 'Enter':
-        e.preventDefault();
-        rate('smooth');
-        break;
     }
   }
 }
@@ -335,89 +369,54 @@ onUnmounted(() => {
 
 .review-card {
   flex: 1;
-  position: relative;
-  min-height: 300px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.card-face {
-  position: absolute;
-  inset: 0;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
-  backface-visibility: hidden;
+  min-height: 200px;
 }
 
-.review-card.flipped .card-front {
-  display: none;
-}
-
-.card-content {
-  flex: 1;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+.card-scroll {
+  padding: 20px;
   overflow-y: auto;
+  max-height: calc(100vh - 280px);
 }
 
-.card-image {
-  max-height: 240px;
-  max-width: 100%;
-  object-fit: contain;
-  border-radius: 8px;
+.card-images {
   margin-bottom: 16px;
+}
+
+.card-question {
+  text-align: center;
+  padding: 12px 0;
 }
 
 .card-title {
   font-size: 1.25rem;
   font-weight: 500;
-  text-align: center;
   word-break: break-word;
 }
 
-.card-subtitle {
+.card-meta {
   margin-top: 8px;
-}
-
-.card-hint {
-  text-align: center;
-  padding: 16px;
-  font-size: 0.85rem;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-wrap: wrap;
   gap: 4px;
+  justify-content: center;
 }
 
-.card-notes {
-  width: 100%;
-  text-align: left;
+.card-section {
+  margin-bottom: 16px;
 }
 
-.card-stats {
-  text-align: center;
-}
-
-.rating-bar {
-  padding: 16px 0;
+.action-bar {
+  padding: 12px 0;
 }
 
 .rating-btn {
   border-radius: 10px;
   padding: 10px 0;
   min-width: 0;
-}
-
-.skip-btn {
-  align-self: center;
-  margin-top: 4px;
 }
 
 .slide-up-enter-active {
@@ -435,15 +434,12 @@ onUnmounted(() => {
 }
 
 .body--dark {
-  .card-face {
+  .review-card {
     background: #1d1d1d;
     box-shadow: 0 2px 12px rgba(0,0,0,0.3);
   }
   .card-title {
     color: #e0e0e0;
-  }
-  .card-hint {
-    color: #888;
   }
 }
 </style>

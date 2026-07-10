@@ -5,6 +5,7 @@
         <h5 class="q-my-none text-weight-medium">错题列表</h5>
       </div>
       <div class="col-auto q-gutter-xs">
+        <q-btn flat dense no-caps icon="select_all" :label="allSelected ? '取消全选' : '全选'" color="grey" @click="toggleSelectAll" />
         <q-btn v-if="selectedIds.length > 0" flat dense icon="file_download" color="primary" :label="`导出所选 (${selectedIds.length})`" @click="exportSelected" no-caps unelevated />
         <q-btn flat dense no-caps icon="filter_list" label="筛选" @click="showFilter = !showFilter" :color="hasActiveFilters ? 'primary' : 'grey'" />
         <q-btn v-if="hasActiveFilters" flat dense no-caps icon="clear" label="重置" color="grey" @click="clearFilters" />
@@ -19,9 +20,33 @@
       <div class="col-12 col-md-3 q-pr-md q-mb-sm q-mb-md-none">
         <q-input v-model="filters.tags" label="标签" outlined dense />
       </div>
-      <div class="col-12 col-md-3 q-pr-md q-mb-sm q-mb-md-none">
-        <q-input v-model="filters.dateRange" label="时间范围 (YYYY-MM-DD~YYYY-MM-DD)" outlined dense>
-          <template v-slot:append><q-icon name="event" class="cursor-pointer" /></template>
+      <div class="col-12 col-md-3 q-pr-md q-mb-sm q-mb-md-none row items-center">
+        <q-input v-model="filters.dateFrom" label="起始日期" outlined dense class="col" mask="####-##-##" :rules="[]">
+          <template v-slot:append>
+            <q-icon name="event" class="cursor-pointer">
+              <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                <q-date v-model="filters.dateFrom" mask="YYYY-MM-DD" bordered>
+                  <div class="row items-center justify-end">
+                    <q-btn flat label="确定" color="primary" v-close-popup />
+                  </div>
+                </q-date>
+              </q-popup-proxy>
+            </q-icon>
+          </template>
+        </q-input>
+        <span class="q-mx-sm text-grey">~</span>
+        <q-input v-model="filters.dateTo" label="结束日期" outlined dense class="col" mask="####-##-##" :rules="[]">
+          <template v-slot:append>
+            <q-icon name="event" class="cursor-pointer">
+              <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                <q-date v-model="filters.dateTo" mask="YYYY-MM-DD" bordered>
+                  <div class="row items-center justify-end">
+                    <q-btn flat label="确定" color="primary" v-close-popup />
+                  </div>
+                </q-date>
+              </q-popup-proxy>
+            </q-icon>
+          </template>
         </q-input>
       </div>
       <div class="col-12 col-md-3 q-mb-sm q-mb-md-none">
@@ -167,7 +192,8 @@ const difficulties = ['简单', '中等', '困难'];
 const filters = reactive({
   subject: null as string | null,
   tags: '',
-  dateRange: '',
+  dateFrom: '',
+  dateTo: '',
 });
 
 const reviewList = computed(() => mistakeStore.todayReviewMistakes);
@@ -280,10 +306,9 @@ const filteredMistakes = computed(() => {
     const q = filters.tags.toLowerCase();
     result = result.filter(m => m.tags.some(t => t.toLowerCase().includes(q)));
   }
-  if (filters.dateRange) {
-    const parts = filters.dateRange.split(/[~\-\/]/).map(s => s.trim()).filter(Boolean);
-    const from = parts[0] ? new Date(parts[0]).getTime() : null;
-    const to = parts[1] ? new Date(parts[1]).getTime() + 86400000 : null;
+  if (filters.dateFrom || filters.dateTo) {
+    const from = filters.dateFrom ? new Date(filters.dateFrom).getTime() : null;
+    const to = filters.dateTo ? new Date(filters.dateTo).getTime() + 86400000 : null;
     result = result.filter(m => {
       const d = new Date(m.createdAt).getTime();
       if (from && d < from) return false;
@@ -295,7 +320,7 @@ const filteredMistakes = computed(() => {
 });
 
 const hasActiveFilters = computed(() =>
-  filters.subject !== null || filters.tags !== '' || filters.dateRange !== ''
+  filters.subject !== null || filters.tags !== '' || filters.dateFrom !== '' || filters.dateTo !== ''
 );
 
 function masterLabel(level: string | null): string {
@@ -319,8 +344,21 @@ function doSearch() {
 function clearFilters() {
   filters.subject = null;
   filters.tags = '';
-  filters.dateRange = '';
+  filters.dateFrom = '';
+  filters.dateTo = '';
   selectedIds.value = [];
+}
+
+const allSelected = computed(() =>
+  filteredMistakes.value.length > 0 && filteredMistakes.value.every(m => selectedIds.value.includes(m.id))
+);
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedIds.value = [];
+  } else {
+    selectedIds.value = filteredMistakes.value.map(m => m.id);
+  }
 }
 
 function toggleSelect(id: string) {
