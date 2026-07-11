@@ -1,5 +1,13 @@
 const IMAGE_PREFIX = 'local:';
+const MAX_CACHE = 200;
 const cache = new Map<string, string>();
+
+function trimCache() {
+  while (cache.size > MAX_CACHE) {
+    const firstKey = cache.keys().next().value;
+    if (firstKey) cache.delete(firstKey);
+  }
+}
 
 export async function saveImage(dataUrl: string): Promise<string> {
   if (window.electronAPI) {
@@ -7,6 +15,7 @@ export async function saveImage(dataUrl: string): Promise<string> {
     if (name) {
       const ref = `${IMAGE_PREFIX}${name}`;
       cache.set(ref, dataUrl);
+      trimCache();
       return ref;
     }
   }
@@ -20,6 +29,7 @@ export async function loadImage(ref: string): Promise<string | null> {
     const dataUrl = await window.electronAPI.loadImage(name);
     if (dataUrl) {
       cache.set(ref, dataUrl);
+      trimCache();
       return dataUrl;
     }
   }

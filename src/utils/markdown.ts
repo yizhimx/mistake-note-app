@@ -52,21 +52,19 @@ export async function buildExportHtml(mistakes: Array<{
   reviewCount: number;
   masteryLevel: string | null;
 }>): Promise<string> {
-  for (const m of mistakes) {
+  const items: string[] = [];
+  for (let idx = 0; idx < mistakes.length; idx++) {
+    const m = mistakes[idx];
     await preloadFromMarkdown(m.content || '');
     await preloadFromMarkdown(m.answer || '');
-  }
-  const items = mistakes.map((m, idx) => {
     const contentHtml = m.content ? renderMarkdown(m.content) : '';
     const imagesHtml = m.imageUrls.map(url =>
       `<img src="${url}" style="max-width:100%;max-height:300px;object-fit:contain;margin-bottom:8px" />`
     ).join('');
-
     let answerHtml = m.answer ? renderMarkdown(m.answer) : '';
     const answerImagesHtml = m.answerImages.map(url =>
       `<img src="${url}" style="max-width:100%;max-height:300px;object-fit:contain;margin-bottom:8px" />`
     ).join('');
-
     let aiHtml = '';
     if (m.aiAnalysis) {
       try {
@@ -81,10 +79,8 @@ export async function buildExportHtml(mistakes: Array<{
         aiHtml = `<div class="ai-section"><h3>AI 分析</h3><p>${m.aiAnalysis}</p></div>`;
       }
     }
-
     const masteryMap: Record<string, string> = { fresh: '生疏', hesitant: '犹豫', smooth: '顺利' };
-
-    return `<div class="mistake-item">
+    items.push(`<div class="mistake-item">
       <h2>${idx + 1}. ${m.title || '未命名错题'}</h2>
       <table class="meta-table">
         <tr><td>科目</td><td>${m.subject || '未分类'}</td></tr>
@@ -109,8 +105,8 @@ export async function buildExportHtml(mistakes: Array<{
           ${aiHtml}
         </div>
       </div>
-    </div>`;
-  }).join('<hr>');
+    </div>`);
+  }
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>

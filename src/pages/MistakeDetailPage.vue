@@ -259,13 +259,11 @@ function openLinkNoteDialog() {
   showLinkNoteDialog.value = true;
 }
 
-if (!mistake.value) {
-  mistakeStore.fetchOne(id);
-}
-
-onMounted(() => {
+onMounted(async () => {
+  await mistakeStore.fetchOne(id);
   if (noteStore.notes.length === 0) {
-    noteStore.fetchAll().then(() => { notesLoaded.value = true; });
+    await noteStore.fetchAll();
+    notesLoaded.value = true;
   } else {
     notesLoaded.value = true;
   }

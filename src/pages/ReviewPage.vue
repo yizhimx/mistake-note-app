@@ -135,6 +135,7 @@ import { useQuasar } from 'quasar';
 import { useMistakeStore, type MistakeRecord } from '@/stores/mistakeStore';
 import { calculateSM2 } from '@/services/sm2';
 import { renderMarkdown } from '@/utils/markdown';
+import { preloadFromMarkdown } from '@/services/imageStore';
 
 const SAVE_KEY = 'review_progress';
 
@@ -197,7 +198,7 @@ function clearProgress() {
   savedProgress.value = null;
 }
 
-function resumeReview() {
+async function resumeReview() {
   const prog = savedProgress.value;
   if (!prog) return;
   const ids = new Set(prog.queue);
@@ -210,19 +211,23 @@ function resumeReview() {
   showAnswer.value = false;
   showRating.value = false;
   showQuestion.value = true;
-  currentReview.value = reviewQueue.value[targetIndex];
+  const next = reviewQueue.value[targetIndex];
+  await Promise.all([preloadFromMarkdown(next.content || ''), preloadFromMarkdown(next.answer || '')]);
+  currentReview.value = next;
   inReview.value = true;
   clearProgress();
 }
 
-function startReview() {
+async function startReview() {
   reviewQueue.value = [...reviewItems.value];
   currentIndex.value = 0;
   showAnswer.value = false;
   showRating.value = false;
   showQuestion.value = true;
   if (reviewQueue.value.length > 0) {
-    currentReview.value = reviewQueue.value[currentIndex.value];
+    const next = reviewQueue.value[0];
+    await Promise.all([preloadFromMarkdown(next.content || ''), preloadFromMarkdown(next.answer || '')]);
+    currentReview.value = next;
     inReview.value = true;
   }
 }
@@ -231,22 +236,26 @@ function toggleView() {
   showQuestion.value = !showQuestion.value;
 }
 
-function nextCard() {
+async function nextCard() {
   currentIndex.value++;
   showQuestion.value = true;
   showRating.value = false;
   if (currentIndex.value < reviewQueue.value.length) {
-    currentReview.value = reviewQueue.value[currentIndex.value];
+    const next = reviewQueue.value[currentIndex.value];
+    await Promise.all([preloadFromMarkdown(next.content || ''), preloadFromMarkdown(next.answer || '')]);
+    currentReview.value = next;
   } else {
     currentReview.value = null;
     $q.notify({ type: 'positive', message: '本轮回顾完成！', timeout: 2000 });
   }
 }
 
-function prevCard() {
+async function prevCard() {
   if (currentIndex.value <= 0) return;
   currentIndex.value--;
-  currentReview.value = reviewQueue.value[currentIndex.value];
+  const prev = reviewQueue.value[currentIndex.value];
+  await Promise.all([preloadFromMarkdown(prev.content || ''), preloadFromMarkdown(prev.answer || '')]);
+  currentReview.value = prev;
   showQuestion.value = true;
   showRating.value = false;
 }

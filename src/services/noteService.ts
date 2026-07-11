@@ -59,15 +59,38 @@ export async function fetchNoteById(id: string): Promise<NoteRecord | null> {
   return row ? toDb(row) : null;
 }
 
+const NOTE_COLS = [
+  'id', 'title', 'subject', 'volume', 'chapter', 'section', 'summary', 'is_folder',
+  'content', 'plain_text', 'tags', 'knowledge_points', 'tips', 'image_urls',
+  'linked_mistake_ids', 'created_at', 'updated_at', 'synced',
+];
+
 export async function addNote(r: NoteRecord): Promise<void> {
   const db = await getDb();
   await db.run(
-    `INSERT INTO notes (
-      id, title, subject, volume, chapter, section, summary, is_folder, content, plain_text,
-      tags, knowledge_points, tips, image_urls, linked_mistake_ids, created_at, updated_at, synced
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO notes (${NOTE_COLS.join(', ')}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     toDbRow(r),
   );
+  await saveDb();
+}
+
+function escapeSql(v: any): string {
+  if (v === null || v === undefined) return 'NULL';
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return `'${String(v).replace(/'/g, "''")}'`;
+}
+
+export async function addNotes(records: NoteRecord[]): Promise<void> {
+  if (records.length === 0) return;
+  const db = await getDb();
+  const statements: string[] = ['BEGIN'];
+  for (const r of records) {
+    statements.push(
+      `INSERT INTO notes (${NOTE_COLS.join(', ')}) VALUES (${toDbRow(r).map(escapeSql).join(', ')})`
+    );
+  }
+  statements.push('COMMIT');
+  await db.exec(statements.join('; '));
   await saveDb();
 }
 

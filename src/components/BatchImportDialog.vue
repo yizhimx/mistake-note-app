@@ -360,34 +360,31 @@ async function saveAll() {
   const toSave = generatedNotes.value.filter(n => n.selected);
   if (toSave.length === 0) return;
   saving.value = true;
-  let saved = 0;
   try {
     const now = new Date().toISOString();
-    for (const note of toSave) {
-      await noteStore.addNote({
-        id: uid(),
-        title: note.title,
-        subject: note.subject,
-        volume: note.volume,
-        chapter: note.chapter,
-        section: note.section,
-        summary: note.summary,
-        isFolder: false,
-        content: note.content,
-        plainText: note.content.replace(/[#*`\n]/g, ' ').trim(),
-        tags: note.tags,
-        knowledgePoints: note.knowledgePoints,
-        tips: [],
-        imageUrls: [],
-        linkedMistakeIds: [],
-        createdAt: now,
-        updatedAt: now,
-        synced: false,
-      });
-      saved++;
-    }
-    $q.notify({ type: 'positive', message: `已保存 ${saved} 条笔记`, timeout: 2000 });
-    emit('imported', saved);
+    const records = toSave.map(n => ({
+      id: uid(),
+      title: n.title,
+      subject: n.subject,
+      volume: n.volume,
+      chapter: n.chapter,
+      section: n.section,
+      summary: n.summary,
+      isFolder: false,
+      content: n.content,
+      plainText: n.content.replace(/[#*`\n]/g, ' ').trim(),
+      tags: n.tags,
+      knowledgePoints: n.knowledgePoints,
+      tips: [],
+      imageUrls: [],
+      linkedMistakeIds: [],
+      createdAt: now,
+      updatedAt: now,
+      synced: false,
+    }));
+    await noteStore.addNotes(records);
+    $q.notify({ type: 'positive', message: `已保存 ${records.length} 条笔记`, timeout: 2000 });
+    emit('imported', records.length);
     emit('update:modelValue', false);
   } catch (e: any) {
     $q.notify({ type: 'negative', message: `保存失败：${e?.message || String(e)}`, timeout: 3000 });

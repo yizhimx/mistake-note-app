@@ -402,42 +402,39 @@ async function saveAll() {
   const toSave = generatedMistakes.value.filter(m => m.selected);
   if (toSave.length === 0) return;
   saving.value = true;
-  let saved = 0;
   try {
     const now = new Date().toISOString();
-    for (const m of toSave) {
-      await mistakeStore.addMistake({
-        id: uid(),
-        title: m.title,
-        content: m.content,
-        imageUrls: [],
-        tags: m.tags,
-        subject: m.subject,
-        notes: m.notes,
-        answer: m.answer,
-        answerImages: [],
-        difficulty: m.difficulty || 0,
-        knowledgePoints: m.knowledgePoints,
-        year: m.year,
-        knowledgeAreas: m.knowledgeAreas,
-        sourcePaperType: m.sourcePaperType,
-        sourcePaperName: m.sourcePaperName,
-        questionNumber: m.questionNumber,
-        aiAnalysis: null,
-        ocrText: null,
-        createdAt: now,
-        updatedAt: now,
-        reviewCount: 0,
-        lastReviewAt: null,
-        masteryLevel: null,
-        sm2Data: null,
-        linkedNoteIds: [],
-        synced: false,
-      } as any);
-      saved++;
-    }
-    $q.notify({ type: 'positive', message: `已保存 ${saved} 道错题`, timeout: 2000 });
-    emit('imported', saved);
+    const records = toSave.map(m => ({
+      id: uid(),
+      title: m.title,
+      content: m.content,
+      imageUrls: [],
+      tags: m.tags,
+      subject: m.subject,
+      notes: m.notes,
+      answer: m.answer,
+      answerImages: [],
+      difficulty: m.difficulty || 0,
+      knowledgePoints: m.knowledgePoints,
+      year: m.year,
+      knowledgeAreas: m.knowledgeAreas,
+      sourcePaperType: m.sourcePaperType,
+      sourcePaperName: m.sourcePaperName,
+      questionNumber: m.questionNumber,
+      aiAnalysis: null,
+      ocrText: null,
+      createdAt: now,
+      updatedAt: now,
+      reviewCount: 0,
+      lastReviewAt: null,
+      masteryLevel: null,
+      sm2Data: null,
+      linkedNoteIds: [],
+      synced: false,
+    } as any));
+    await mistakeStore.addMistakes(records);
+    $q.notify({ type: 'positive', message: `已保存 ${records.length} 道错题`, timeout: 2000 });
+    emit('imported', records.length);
     emit('update:modelValue', false);
   } catch (e: any) {
     $q.notify({ type: 'negative', message: `保存失败：${e?.message || String(e)}`, timeout: 3000 });

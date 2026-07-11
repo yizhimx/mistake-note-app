@@ -3,6 +3,7 @@ import {
   fetchNotes,
   fetchNoteById,
   addNote as dbAdd,
+  addNotes as dbAddMany,
   updateNote as dbUpdate,
   deleteNote as dbDelete,
 } from '@/services/noteService';
@@ -65,6 +66,10 @@ export const useNoteStore = defineStore('note', {
     async addNote(record: NoteRecord) {
       await dbAdd(record);
       this.notes.unshift(record);
+    },
+    async addNotes(records: NoteRecord[]) {
+      await dbAddMany(records);
+      this.notes.unshift(...records);
     },
     async updateNote(id: string, data: Partial<NoteRecord>) {
       await dbUpdate(id, data);

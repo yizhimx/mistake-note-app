@@ -110,6 +110,32 @@ export async function addMistake(r: MistakeRecord): Promise<void> {
   await saveDb();
 }
 
+function escapeSql(v: any): string {
+  if (v === null || v === undefined) return 'NULL';
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return `'${String(v).replace(/'/g, "''")}'`;
+}
+
+export async function addMistakes(records: MistakeRecord[]): Promise<void> {
+  if (records.length === 0) return;
+  const db = await getDb();
+  const statements: string[] = ['BEGIN'];
+  for (const r of records) {
+    const values = toDbRow(r);
+    const undefIdx = values.findIndex(v => v === undefined);
+    if (undefIdx !== -1) {
+      console.error('Undefined value at index', undefIdx, 'for record', r.id);
+      continue;
+    }
+    statements.push(
+      `INSERT INTO mistakes (${INSERT_COLS.join(', ')}) VALUES (${values.map(escapeSql).join(', ')})`
+    );
+  }
+  statements.push('COMMIT');
+  await db.exec(statements.join('; '));
+  await saveDb();
+}
+
 const UPDATE_COLS = [
   'title', 'content', 'image_urls', 'tags', 'subject', 'notes',
   'answer', 'answer_images', 'difficulty', 'knowledge_points',

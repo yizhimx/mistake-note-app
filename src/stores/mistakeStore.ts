@@ -3,6 +3,7 @@ import {
   fetchMistakes,
   fetchMistakeById,
   addMistake as dbAdd,
+  addMistakes as dbAddMany,
   updateMistake as dbUpdate,
   deleteMistake as dbDelete,
   searchMistakes,
@@ -68,11 +69,6 @@ export const useMistakeStore = defineStore('mistake', {
       this.loading = true;
       try {
         this.mistakes = await fetchMistakes();
-        // Pre-load images for rendering
-        for (const m of this.mistakes) {
-          await preloadFromMarkdown(m.content || '');
-          await preloadFromMarkdown(m.answer || '');
-        }
       } catch (e) {
         console.error('Failed to fetch mistakes:', e);
         this.mistakes = [];
@@ -94,6 +90,10 @@ export const useMistakeStore = defineStore('mistake', {
     async addMistake(record: MistakeRecord) {
       await dbAdd(record);
       this.mistakes.unshift(record);
+    },
+    async addMistakes(records: MistakeRecord[]) {
+      await dbAddMany(records);
+      this.mistakes.unshift(...records);
     },
     async updateMistake(id: string, data: Partial<MistakeRecord>) {
       await dbUpdate(id, data);
