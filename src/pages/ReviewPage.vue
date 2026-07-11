@@ -9,7 +9,7 @@
 
       <div v-if="savedProgress" class="bg-primary text-white q-pa-md rounded-borders q-mb-md row items-center">
         <q-icon name="history" class="q-mr-sm" />
-        <span>上次回顾到第 {{ savedProgress.index + 1 }}/{{ savedProgress.total }} 题</span>
+        <span>上次回顾到第 {{ savedProgress.index + 1 }}/{{ savedProgress.total || '?' }} 题</span>
         <q-space />
         <q-btn flat label="继续" @click="resumeReview" no-caps unelevated />
         <q-btn flat label="丢弃" @click="clearProgress" no-caps unelevated dense />
@@ -62,50 +62,18 @@
 
       <div class="review-card" v-if="currentReview">
         <div class="card-scroll">
-          <!-- Question side -->
+          <!-- Question side: only the question content -->
           <div v-if="showQuestion">
-            <div v-if="currentReview.imageUrls.length > 0" class="card-images">
-              <q-carousel v-model="slide" animated arrows navigation infinite class="rounded-borders" style="max-height: 250px">
-                <q-carousel-slide v-for="(url, idx) in currentReview.imageUrls" :key="idx" :name="idx">
-                  <img :src="url" class="full-height full-width" style="object-fit: contain" />
-                </q-carousel-slide>
-              </q-carousel>
-            </div>
-            <div class="card-question">
-              <div class="card-title">{{ currentReview.title }}</div>
-              <div class="card-meta">
-                <q-chip size="xs" color="primary" text-color="white">{{ currentReview.subject || '未分类' }}</q-chip>
-                <q-chip v-if="currentReview.difficulty" size="xs" color="orange" text-color="white">{{ currentReview.difficulty }}</q-chip>
-                <q-chip v-if="currentReview.tags.length > 0" size="xs" color="secondary" text-color="white">{{ currentReview.tags.slice(0, 3).join(', ') }}</q-chip>
-              </div>
+            <div v-if="currentReview.content" class="q-pa-md text-center markdown-body" v-html="renderedReviewContent" />
+            <div v-else class="q-pa-md text-center">
+              <div class="text-h5">{{ currentReview.title }}</div>
             </div>
           </div>
 
-          <!-- Answer side -->
+          <!-- Answer side: only the answer content -->
           <div v-else>
-            <div class="card-section" v-if="currentReview.answerImages.length > 0">
-              <div class="text-weight-medium q-mb-sm">答案图片</div>
-              <div class="row q-gutter-sm">
-                <div v-for="(url, idx) in currentReview.answerImages" :key="idx" class="col-6">
-                  <q-img :src="url" style="max-height: 180px" class="rounded-borders" />
-                </div>
-              </div>
-            </div>
-            <div class="card-section" v-if="currentReview.answer">
-              <div class="text-weight-medium q-mb-sm">答案</div>
-              <div class="text-body1" v-html="renderedAnswer" />
-            </div>
-            <div class="card-section" v-if="currentReview.notes">
-              <div class="text-weight-medium q-mb-sm">备注</div>
-              <div class="text-body2" style="white-space: pre-wrap">{{ currentReview.notes }}</div>
-            </div>
-            <div class="card-section" v-if="currentReview.knowledgePoints.length > 0">
-              <div class="text-weight-medium q-mb-sm">知识点</div>
-              <q-chip v-for="kp in currentReview.knowledgePoints" :key="kp" size="xs" color="secondary" text-color="white">{{ kp }}</q-chip>
-            </div>
-            <div v-if="!currentReview.answer && !currentReview.answerImages.length && !currentReview.notes && !currentReview.knowledgePoints.length" class="text-grey text-center q-pa-lg">
-              暂无答案内容
-            </div>
+            <div v-if="currentReview.answer" class="q-pa-md markdown-body" v-html="renderedAnswer" />
+            <div v-else class="text-grey text-center q-pa-lg">暂无答案内容</div>
           </div>
         </div>
       </div>
@@ -186,6 +154,10 @@ const renderedAnswer = computed(() => {
   return currentReview.value?.answer ? renderMarkdown(currentReview.value.answer) : '';
 });
 
+const renderedReviewContent = computed(() => {
+  return currentReview.value?.content ? renderMarkdown(currentReview.value.content) : '';
+});
+
 const reviewItems = computed(() => {
   return mistakeStore.mistakes.filter(m => {
     if (!m.sm2Data) return true;
@@ -199,6 +171,7 @@ const reviewItems = computed(() => {
 interface SavedProgress {
   queue: string[];
   index: number;
+  total: number;
 }
 
 const isLast = computed(() => currentReview.value !== null && currentIndex.value >= reviewQueue.value.length - 1);
@@ -206,9 +179,9 @@ const isLast = computed(() => currentReview.value !== null && currentIndex.value
 const savedProgress = ref<SavedProgress | null>(null);
 
 function saveProgress() {
-  const ids = reviewQueue.value.slice(currentIndex.value).map(m => m.id);
-  if (ids.length === 0) return;
-  const data: SavedProgress = { queue: ids, index: currentIndex.value };
+  if (reviewQueue.value.length === 0) return;
+  const originalTotal = reviewQueue.value.length;
+  const data: SavedProgress = { queue: reviewQueue.value.map(m => m.id), index: currentIndex.value, total: originalTotal };
   localStorage.setItem(SAVE_KEY, JSON.stringify(data));
 }
 
@@ -232,11 +205,12 @@ function resumeReview() {
   const ordered = prog.queue.map(id => items.find(m => m.id === id)).filter(Boolean) as MistakeRecord[];
   if (ordered.length === 0) { clearProgress(); return; }
   reviewQueue.value = ordered;
-  currentIndex.value = 0;
+  const targetIndex = Math.min(prog.index, ordered.length - 1);
+  currentIndex.value = targetIndex;
   showAnswer.value = false;
   showRating.value = false;
   showQuestion.value = true;
-  currentReview.value = reviewQueue.value[0];
+  currentReview.value = reviewQueue.value[targetIndex];
   inReview.value = true;
   clearProgress();
 }
@@ -382,33 +356,6 @@ onUnmounted(() => {
   max-height: calc(100vh - 280px);
 }
 
-.card-images {
-  margin-bottom: 16px;
-}
-
-.card-question {
-  text-align: center;
-  padding: 12px 0;
-}
-
-.card-title {
-  font-size: 1.25rem;
-  font-weight: 500;
-  word-break: break-word;
-}
-
-.card-meta {
-  margin-top: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  justify-content: center;
-}
-
-.card-section {
-  margin-bottom: 16px;
-}
-
 .action-bar {
   padding: 12px 0;
 }
@@ -437,9 +384,6 @@ onUnmounted(() => {
   .review-card {
     background: #1d1d1d;
     box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-  }
-  .card-title {
-    color: #e0e0e0;
   }
 }
 </style>

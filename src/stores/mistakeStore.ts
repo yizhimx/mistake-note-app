@@ -7,18 +7,25 @@ import {
   deleteMistake as dbDelete,
   searchMistakes,
 } from '@/services/mistakeService';
+import { preloadFromMarkdown, deleteImage, extractImageRefs } from '@/services/imageStore';
 
 export interface MistakeRecord {
   id: string;
   title: string;
+  content: string;
   imageUrls: string[];
   tags: string[];
   subject: string;
   notes: string;
   answer: string;
   answerImages: string[];
-  difficulty: string;
+  difficulty: number;
   knowledgePoints: string[];
+  year: string;
+  knowledgeArea: string;
+  sourcePaperType: string;
+  sourcePaperName: string;
+  questionNumber: string;
   aiAnalysis: string | null;
   ocrText: string | null;
   createdAt: string;
@@ -61,6 +68,11 @@ export const useMistakeStore = defineStore('mistake', {
       this.loading = true;
       try {
         this.mistakes = await fetchMistakes();
+        // Pre-load images for rendering
+        for (const m of this.mistakes) {
+          await preloadFromMarkdown(m.content || '');
+          await preloadFromMarkdown(m.answer || '');
+        }
       } catch (e) {
         console.error('Failed to fetch mistakes:', e);
         this.mistakes = [];
@@ -71,6 +83,8 @@ export const useMistakeStore = defineStore('mistake', {
     async fetchOne(id: string) {
       const record = await fetchMistakeById(id);
       if (record) {
+        await preloadFromMarkdown(record.content || '');
+        await preloadFromMarkdown(record.answer || '');
         const idx = this.mistakes.findIndex((m) => m.id === id);
         if (idx !== -1) this.mistakes[idx] = record;
         else this.mistakes.unshift(record);
@@ -89,6 +103,16 @@ export const useMistakeStore = defineStore('mistake', {
       }
     },
     async removeMistake(id: string) {
+      const removed = this.mistakes.find(m => m.id === id);
+      if (removed) {
+        const refs = [
+          ...extractImageRefs(removed.content || ''),
+          ...extractImageRefs(removed.answer || ''),
+        ];
+        for (const ref of refs) {
+          await deleteImage(ref).catch(() => {});
+        }
+      }
       await dbDelete(id);
       this.mistakes = this.mistakes.filter((m) => m.id !== id);
     },

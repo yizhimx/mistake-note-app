@@ -1,44 +1,63 @@
-export function renderMarkdown(text: string): string {
-  let html = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/```([\s\S]*?)```/g, (_: string, code: string) => {
-      return `<pre><code>${code.trim()}</code></pre>`;
-    })
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/^(\d+)\. (.+)$/gm, '<li value="$1">$2</li>')
-    .replace(/\n{2,}/g, '</p><p>')
-    .replace(/\n/g, '<br>');
+import { marked } from 'marked';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import { getCachedImage, preloadFromMarkdown } from '@/services/imageStore';
 
-  html = html.replace(/<li>/g, '<ul><li>').replace(/<\/li>(?!\s*<li>)/g, '</li></ul>');
-  html = '<p>' + html + '</p>';
-  html = html.replace(/<p><\/p>/g, '');
+const PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+function renderKatex(text: string): string {
+  return text
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_m: string, math: string) => {
+      try { return katex.renderToString(math.trim(), { displayMode: true, throwOnError: false }); }
+      catch { return `<div class="katex-error">${math.trim()}</div>`; }
+    })
+    .replace(/\$([^$\n]+?)\$/g, (_m: string, math: string) => {
+      try { return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false }); }
+      catch { return `<span class="katex-error">${math.trim()}</span>`; }
+    });
+}
+
+function resolveImages(text: string): string {
+  return text.replace(/!\[([^\]]*)\]\((local:[^)]+)\)/g, (_m: string, alt: string, ref: string) => {
+    const dataUrl = getCachedImage(ref);
+    return `![${alt}](${dataUrl || PLACEHOLDER})`;
+  });
+}
+
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
+
+export function renderMarkdown(text: string): string {
+  const resolved = resolveImages(text);
+  const processed = renderKatex(resolved);
+  const html = marked.parse(processed) as string;
   return html;
 }
 
-export function buildExportHtml(mistakes: Array<{
+export async function buildExportHtml(mistakes: Array<{
   title: string;
+  content?: string;
   imageUrls: string[];
   answer: string;
   answerImages: string[];
   aiAnalysis: string | null;
   subject: string;
-  difficulty: string;
+  difficulty: number;
   tags: string[];
   knowledgePoints: string[];
   notes: string;
   createdAt: string;
   reviewCount: number;
   masteryLevel: string | null;
-}>): string {
+}>): Promise<string> {
+  for (const m of mistakes) {
+    await preloadFromMarkdown(m.content || '');
+    await preloadFromMarkdown(m.answer || '');
+  }
   const items = mistakes.map((m, idx) => {
+    const contentHtml = m.content ? renderMarkdown(m.content) : '';
     const imagesHtml = m.imageUrls.map(url =>
       `<img src="${url}" style="max-width:100%;max-height:300px;object-fit:contain;margin-bottom:8px" />`
     ).join('');
@@ -63,14 +82,13 @@ export function buildExportHtml(mistakes: Array<{
       }
     }
 
-    const difficultyMap: Record<string, string> = { '简单': '简单', '中等': '中等', '困难': '困难' };
     const masteryMap: Record<string, string> = { fresh: '生疏', hesitant: '犹豫', smooth: '顺利' };
 
     return `<div class="mistake-item">
       <h2>${idx + 1}. ${m.title || '未命名错题'}</h2>
       <table class="meta-table">
         <tr><td>科目</td><td>${m.subject || '未分类'}</td></tr>
-        <tr><td>难度</td><td>${difficultyMap[m.difficulty] || m.difficulty || '-'}</td></tr>
+        <tr><td>难度</td><td>${m.difficulty || '-'}</td></tr>
         <tr><td>标签</td><td>${m.tags.join(', ') || '-'}</td></tr>
         <tr><td>知识点</td><td>${m.knowledgePoints.join(', ') || '-'}</td></tr>
         <tr><td>掌握度</td><td>${m.masteryLevel ? masteryMap[m.masteryLevel] || m.masteryLevel : '未掌握'}</td></tr>
@@ -78,7 +96,7 @@ export function buildExportHtml(mistakes: Array<{
         <tr><td>录入时间</td><td>${m.createdAt.slice(0, 10)}</td></tr>
         <tr><td>备注</td><td>${m.notes || '-'}</td></tr>
       </table>
-      ${imagesHtml}
+      ${contentHtml || imagesHtml}
       ${answerHtml}
       ${answerImagesHtml}
       ${aiHtml}
@@ -95,11 +113,13 @@ export function buildExportHtml(mistakes: Array<{
   .mistake-item { page-break-inside: avoid; margin-bottom: 20px; }
   .ai-section { background: #f0f7ff; padding: 10px; border-radius: 6px; margin-top: 8px; }
   hr { margin: 24px 0; border: none; border-top: 2px solid #eee; }
-  img { margin: 4px 0; border: 1px solid #ddd; border-radius: 4px; }
+  img { margin: 4px 0; border: 1px solid #ddd; border-radius: 4px; max-width: 100%; }
   pre { background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; }
   code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
   ul { padding-left: 20px; }
   ol { padding-left: 20px; }
+  .katex { font-size: 1.1em; }
+  .katex-error { color: red; }
 </style></head><body>
   <h1>错题导出</h1>
   <p style="text-align:center;color:#666">导出时间：${new Date().toLocaleString()}</p>

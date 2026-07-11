@@ -19,6 +19,9 @@ declare global {
       writeDbFile(data: Uint8Array): Promise<void>;
       getDbPath(): Promise<string>;
       exportPdf?(html: string): Promise<boolean>;
+      saveImage(dataUrl: string): Promise<string | null>;
+      loadImage(name: string): Promise<string | null>;
+      deleteImage(name: string): Promise<void>;
     };
   }
 }
@@ -115,10 +118,20 @@ async function initTables() {
     CREATE TABLE IF NOT EXISTS mistakes (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
       image_urls TEXT NOT NULL DEFAULT '[]',
       tags TEXT NOT NULL DEFAULT '[]',
       subject TEXT DEFAULT '',
       notes TEXT DEFAULT '',
+      answer TEXT DEFAULT '',
+      answer_images TEXT NOT NULL DEFAULT '[]',
+      difficulty TEXT DEFAULT '0',
+      knowledge_points TEXT NOT NULL DEFAULT '[]',
+      year TEXT DEFAULT '',
+      knowledge_area TEXT DEFAULT '',
+      source_paper_type TEXT DEFAULT '',
+      source_paper_name TEXT DEFAULT '',
+      question_number TEXT DEFAULT '',
       ai_analysis TEXT,
       ocr_text TEXT,
       created_at TEXT NOT NULL,
@@ -167,12 +180,18 @@ async function initTables() {
     )
   `);
 
-  // Migrate: add new columns if not exist
+  // Migrate: add new columns for older databases
   for (const col of [
+    'ALTER TABLE mistakes ADD COLUMN content TEXT DEFAULT \'\'',
     'ALTER TABLE mistakes ADD COLUMN answer TEXT DEFAULT \'\'',
     'ALTER TABLE mistakes ADD COLUMN answer_images TEXT NOT NULL DEFAULT \'[]\'',
-    'ALTER TABLE mistakes ADD COLUMN difficulty TEXT DEFAULT \'\'',
+    'ALTER TABLE mistakes ADD COLUMN difficulty TEXT DEFAULT \'0\'',
     'ALTER TABLE mistakes ADD COLUMN knowledge_points TEXT NOT NULL DEFAULT \'[]\'',
+    'ALTER TABLE mistakes ADD COLUMN year TEXT DEFAULT \'\'',
+    'ALTER TABLE mistakes ADD COLUMN knowledge_area TEXT DEFAULT \'\'',
+    'ALTER TABLE mistakes ADD COLUMN source_paper_type TEXT DEFAULT \'\'',
+    'ALTER TABLE mistakes ADD COLUMN source_paper_name TEXT DEFAULT \'\'',
+    'ALTER TABLE mistakes ADD COLUMN question_number TEXT DEFAULT \'\'',
   ]) {
     try { await dbWorker.exec(col); } catch { /* column may already exist */ }
   }

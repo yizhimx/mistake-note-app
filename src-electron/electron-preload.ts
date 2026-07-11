@@ -35,4 +35,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   writeDbFile: (data: Uint8Array) => ipcRenderer.invoke("db:write", data.buffer),
   getDbPath: () => ipcRenderer.invoke("db:getPath"),
   exportPdf: (html: string) => ipcRenderer.invoke("export:pdf", html),
+  saveImage: (dataUrl: string) => ipcRenderer.invoke("image:save", dataUrl),
+  loadImage: (name: string) => ipcRenderer.invoke("image:load", name),
+  deleteImage: (name: string) => ipcRenderer.invoke("image:delete", name),
 });

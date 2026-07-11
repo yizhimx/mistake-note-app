@@ -4,15 +4,21 @@ import type { MistakeRecord } from '@/stores/mistakeStore';
 function toDb(row: any): MistakeRecord {
   return {
     id: row.id,
-    title: row.title,
+    title: row.title || '',
+    content: row.content || '',
     imageUrls: JSON.parse(row.image_urls || '[]'),
     tags: JSON.parse(row.tags || '[]'),
     subject: row.subject || '',
     notes: row.notes || '',
     answer: row.answer || '',
     answerImages: JSON.parse(row.answer_images || '[]'),
-    difficulty: row.difficulty || '',
+    difficulty: parseInt(row.difficulty, 10) || 0,
     knowledgePoints: JSON.parse(row.knowledge_points || '[]'),
+    year: row.year || '',
+    knowledgeArea: row.knowledge_area || '',
+    sourcePaperType: row.source_paper_type || '',
+    sourcePaperName: row.source_paper_name || '',
+    questionNumber: row.question_number || '',
     aiAnalysis: row.ai_analysis || null,
     ocrText: row.ocr_text || null,
     createdAt: row.created_at,
@@ -26,28 +32,38 @@ function toDb(row: any): MistakeRecord {
   };
 }
 
+function safe(v: any): any {
+  return v === undefined ? null : v;
+}
+
 function toDbRow(r: MistakeRecord) {
   return [
-    r.id,
-    r.title,
-    JSON.stringify(r.imageUrls),
-    JSON.stringify(r.tags),
-    r.subject,
-    r.notes,
-    r.answer || '',
-    JSON.stringify(r.answerImages || []),
-    r.difficulty || '',
-    JSON.stringify(r.knowledgePoints || []),
-    r.aiAnalysis || null,
-    r.ocrText || null,
-    r.createdAt,
-    r.updatedAt,
-    r.reviewCount,
-    r.lastReviewAt || null,
-    r.masteryLevel || null,
-    r.sm2Data || null,
-    JSON.stringify(r.linkedNoteIds),
-    r.synced ? 1 : 0,
+    safe(r.id),
+    safe(r.title),
+    safe(r.content),
+    safe(JSON.stringify(r.imageUrls)),
+    safe(JSON.stringify(r.tags)),
+    safe(r.subject),
+    safe(r.notes),
+    safe(r.answer || ''),
+    safe(JSON.stringify(r.answerImages || [])),
+    safe(String(r.difficulty || 0)),
+    safe(JSON.stringify(r.knowledgePoints || [])),
+    safe(r.year || ''),
+    safe(r.knowledgeArea || ''),
+    safe(r.sourcePaperType || ''),
+    safe(r.sourcePaperName || ''),
+    safe(r.questionNumber || ''),
+    safe(r.aiAnalysis || null),
+    safe(r.ocrText || null),
+    safe(r.createdAt),
+    safe(r.updatedAt),
+    safe(r.reviewCount),
+    safe(r.lastReviewAt || null),
+    safe(r.masteryLevel || null),
+    safe(r.sm2Data || null),
+    safe(JSON.stringify(r.linkedNoteIds)),
+    safe(r.synced ? 1 : 0),
   ];
 }
 
@@ -63,54 +79,73 @@ export async function fetchMistakeById(id: string): Promise<MistakeRecord | null
   return row ? toDb(row) : null;
 }
 
+const INSERT_COLS = [
+  'id', 'title', 'content', 'image_urls', 'tags', 'subject', 'notes',
+  'answer', 'answer_images', 'difficulty', 'knowledge_points',
+  'year', 'knowledge_area', 'source_paper_type', 'source_paper_name', 'question_number',
+  'ai_analysis', 'ocr_text', 'created_at', 'updated_at',
+  'review_count', 'last_review_at', 'mastery_level', 'sm2_data',
+  'linked_note_ids', 'synced',
+];
+const PLACEHOLDERS = INSERT_COLS.map(() => '?').join(', ');
+
 export async function addMistake(r: MistakeRecord): Promise<void> {
   const db = await getDb();
+  const values = toDbRow(r);
+  const undefIdx = values.findIndex(v => v === undefined);
+  if (undefIdx !== -1) {
+    console.error('Undefined value at index', undefIdx, 'in toDbRow');
+  }
   await db.run(
-    `INSERT INTO mistakes (
-      id, title, image_urls, tags, subject, notes,
-      answer, answer_images, difficulty, knowledge_points,
-      ai_analysis, ocr_text, created_at, updated_at,
-      review_count, last_review_at, mastery_level, sm2_data,
-      linked_note_ids, synced
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    toDbRow(r),
+    `INSERT INTO mistakes (${INSERT_COLS.join(', ')}) VALUES (${PLACEHOLDERS})`,
+    values,
   );
   await saveDb();
 }
+
+const UPDATE_COLS = [
+  'title', 'content', 'image_urls', 'tags', 'subject', 'notes',
+  'answer', 'answer_images', 'difficulty', 'knowledge_points',
+  'year', 'knowledge_area', 'source_paper_type', 'source_paper_name', 'question_number',
+  'ai_analysis', 'ocr_text', 'updated_at',
+  'review_count', 'last_review_at', 'mastery_level', 'sm2_data',
+  'linked_note_ids', 'synced',
+];
 
 export async function updateMistake(id: string, data: Partial<MistakeRecord>): Promise<void> {
   const existing = await fetchMistakeById(id);
   if (!existing) return;
   const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
   const db = await getDb();
+  const setClause = UPDATE_COLS.map(c => `${c}=?`).join(', ');
   await db.run(
-    `UPDATE mistakes SET
-      title=?, image_urls=?, tags=?, subject=?, notes=?,
-      answer=?, answer_images=?, difficulty=?, knowledge_points=?,
-      ai_analysis=?, ocr_text=?, updated_at=?,
-      review_count=?, last_review_at=?, mastery_level=?, sm2_data=?,
-      linked_note_ids=?, synced=?
-    WHERE id=?`,
+    `UPDATE mistakes SET ${setClause} WHERE id=?`,
     [
-      merged.title,
-      JSON.stringify(merged.imageUrls),
-      JSON.stringify(merged.tags),
-      merged.subject,
-      merged.notes,
-      merged.answer || '',
-      JSON.stringify(merged.answerImages || []),
-      merged.difficulty || '',
-      JSON.stringify(merged.knowledgePoints || []),
-      merged.aiAnalysis || null,
-      merged.ocrText || null,
-      merged.updatedAt,
-      merged.reviewCount,
-      merged.lastReviewAt || null,
-      merged.masteryLevel || null,
-      merged.sm2Data || null,
-      JSON.stringify(merged.linkedNoteIds),
-      merged.synced ? 1 : 0,
-      id,
+      safe(merged.title),
+      safe(merged.content),
+      safe(JSON.stringify(merged.imageUrls)),
+      safe(JSON.stringify(merged.tags)),
+      safe(merged.subject),
+      safe(merged.notes),
+      safe(merged.answer || ''),
+      safe(JSON.stringify(merged.answerImages || [])),
+      safe(String(merged.difficulty || 0)),
+      safe(JSON.stringify(merged.knowledgePoints || [])),
+      safe(merged.year || ''),
+      safe(merged.knowledgeArea || ''),
+      safe(merged.sourcePaperType || ''),
+      safe(merged.sourcePaperName || ''),
+      safe(merged.questionNumber || ''),
+      safe(merged.aiAnalysis || null),
+      safe(merged.ocrText || null),
+      safe(merged.updatedAt),
+      safe(merged.reviewCount),
+      safe(merged.lastReviewAt || null),
+      safe(merged.masteryLevel || null),
+      safe(merged.sm2Data || null),
+      safe(JSON.stringify(merged.linkedNoteIds)),
+      safe(merged.synced ? 1 : 0),
+      safe(id),
     ],
   );
   await saveDb();

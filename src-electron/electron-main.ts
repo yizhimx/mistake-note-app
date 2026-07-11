@@ -2,21 +2,60 @@ import { BrowserWindow, app, ipcMain, dialog } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
+import crypto from "node:crypto";
 import {
   registerQuasarRuntime,
   resolveElectronAssetsPath
 } from "#q-app/electron/main";
 
 const DB_FILENAME = "mistake-note.db";
+const IMAGES_DIR = "images";
 
 function getDbPath(): string {
   return path.join(app.getPath("userData"), DB_FILENAME);
+}
+
+function getImagesDir(): string {
+  return path.join(app.getPath("userData"), IMAGES_DIR);
+}
+
+async function ensureImagesDir() {
+  const dir = getImagesDir();
+  try { await fs.promises.mkdir(dir, { recursive: true }); } catch { /* ok */ }
 }
 
 // needed in case process is undefined under Linux
 const platform = process.platform || os.platform();
 
 async function registerIpcHandlers() {
+  await ensureImagesDir();
+
+  ipcMain.handle("image:save", async (_event, dataUrl: string) => {
+    const base64 = dataUrl.split(',')[1];
+    if (!base64) return null;
+    const buf = Buffer.from(base64, 'base64');
+    const ext = dataUrl.startsWith('data:image/png') ? 'png' : 'jpg';
+    const name = `${crypto.randomUUID().slice(0, 8)}.${ext}`;
+    const filePath = path.join(getImagesDir(), name);
+    await fs.promises.writeFile(filePath, buf);
+    return name;
+  });
+
+  ipcMain.handle("image:load", async (_event, name: string) => {
+    const filePath = path.join(getImagesDir(), name);
+    try {
+      const buf = await fs.promises.readFile(filePath);
+      const ext = path.extname(name).toLowerCase();
+      const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
+      return `data:${mime};base64,${buf.toString('base64')}`;
+    } catch { return null; }
+  });
+
+  ipcMain.handle("image:delete", async (_event, name: string) => {
+    const filePath = path.join(getImagesDir(), name);
+    try { await fs.promises.unlink(filePath); } catch { /* ok */ }
+  });
+
   ipcMain.handle("db:read", async () => {
     const dbPath = getDbPath();
     try {

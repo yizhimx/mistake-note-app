@@ -20,19 +20,10 @@
 
     <div v-if="mistake" class="row">
       <div class="col-12 col-md-7">
-        <q-carousel
-          v-if="mistake.imageUrls.length > 0"
-          v-model="slide" animated arrows navigation infinite
-          class="rounded-borders" style="max-height: 400px"
-        >
-          <q-carousel-slide v-for="(url, idx) in mistake.imageUrls" :key="idx" :name="idx">
-            <img :src="url" class="full-height full-width" style="object-fit: contain" />
-          </q-carousel-slide>
-        </q-carousel>
-        <div v-else class="bg-grey-3 rounded-borders flex flex-center" style="height: 200px">
-          <span class="text-grey">无图片</span>
+        <div v-if="mistake.content" class="q-mt-md markdown-body" v-html="renderedContent" />
+        <div v-else class="q-mt-md">
+          <div class="text-h5">{{ mistake.title }}</div>
         </div>
-        <div class="q-mt-xs text-caption text-grey">共 {{ mistake.imageUrls.length }} 张图片</div>
 
         <AIAnalysisCard
           v-if="parsedAnalysis"
@@ -51,20 +42,28 @@
           <q-chip v-for="tag in mistake.tags" :key="tag" size="sm" color="primary" text-color="white">{{ tag }}</q-chip>
           <span v-if="mistake.tags.length === 0" class="text-grey text-caption">无标签</span>
         </div>
-        <div class="q-mt-sm text-grey">科目：{{ mistake.subject || '未分类' }}</div>
-        <div class="text-grey" v-if="mistake.difficulty">
-          <span>难度：{{ difficultyLabel }}</span>
-        </div>
-        <div class="text-grey text-caption">创建时间：{{ mistake.createdAt }}</div>
 
-        <div class="q-mt-md" v-if="mistake.answer || mistake.answerImages.length > 0">
-          <div class="text-weight-medium">答案</div>
-          <div v-if="mistake.answer" class="q-mt-xs markdown-body" v-html="renderedAnswer" />
-          <div v-if="mistake.answerImages.length > 0" class="row q-gutter-sm q-mt-sm">
-            <div v-for="(url, idx) in mistake.answerImages" :key="idx" class="col-6">
-              <q-img :src="url" style="max-height: 200px" class="rounded-borders" />
-            </div>
+        <q-separator class="q-my-md" />
+
+        <div class="q-mb-md">
+          <div class="row text-caption text-grey">
+            <div class="col-6" v-if="mistake.year">年份：{{ mistake.year }}</div>
+            <div class="col-6" v-if="mistake.knowledgeArea">知识板块：{{ mistake.knowledgeArea }}</div>
+            <div class="col-6" v-if="mistake.sourcePaperType">试卷类型：{{ mistake.sourcePaperType }}</div>
+            <div class="col-6" v-if="mistake.sourcePaperName">试卷名称：{{ mistake.sourcePaperName }}</div>
+            <div class="col-6" v-if="mistake.questionNumber">题号：{{ mistake.questionNumber }}</div>
+            <div class="col-6">科目：{{ mistake.subject || '未分类' }}</div>
           </div>
+        </div>
+
+        <div class="q-mb-md">
+          <span class="text-grey text-caption">难度：</span>
+          <q-rating :model-value="mistake.difficulty" :max="5" size="1em" icon="star_border" icon-selected="star" color="orange" readonly />
+        </div>
+
+        <div class="q-mt-md" v-if="mistake.answer">
+          <div class="text-weight-medium">答案</div>
+          <div class="q-mt-xs markdown-body" v-html="renderedAnswer" />
         </div>
 
         <div class="q-mt-sm" v-if="mistake.knowledgePoints.length > 0">
@@ -87,7 +86,7 @@
             {{ masteryLabel }}
           </q-chip>
         </div>
-        <div v-if="mistake.sm2Data" class="text-caption text-grey">
+        <div v-if="mistake.sm2Data" class="text-caption text-grey q-mb-md">
           下次复习：{{ nextReviewDate }}
         </div>
         <div v-if="mistake.linkedNoteIds.length > 0" class="q-mt-md">
@@ -96,36 +95,44 @@
             {{ nid.slice(0, 8) }}
           </q-chip>
         </div>
-        <q-separator class="q-my-md" />
-        <div class="q-mb-md">
-          <div class="text-weight-medium q-mb-sm">掌握度评价</div>
-          <div class="row q-gutter-sm">
-            <q-btn color="negative" icon="sentiment_very_dissatisfied" label="生疏" @click="rateMistake('fresh')" unelevated class="col" no-caps />
-            <q-btn color="warning" icon="sentiment_neutral" label="犹豫" @click="rateMistake('hesitant')" unelevated class="col" no-caps />
-            <q-btn color="positive" icon="sentiment_satisfied" label="顺利" @click="rateMistake('smooth')" unelevated class="col" no-caps />
-          </div>
-        </div>
+
       </div>
 
       <div class="col-12 col-md-5 q-pl-md" v-if="editing">
         <q-input v-model="editTitle" label="标题" outlined dense class="q-mb-md" />
+        <div class="row q-col-gutter-sm q-mb-md">
+          <div class="col-4">
+            <q-select v-model="editYear" :options="yearOptions" label="年份" clearable outlined dense />
+          </div>
+          <div class="col-4">
+            <q-select v-model="editKnowledgeArea" :options="knowledgeAreas" label="知识板块" clearable outlined dense />
+          </div>
+          <div class="col-4">
+            <q-select v-model="editSourcePaperType" :options="paperTypes" label="试卷类型" clearable outlined dense />
+          </div>
+          <div class="col-6">
+            <q-input v-model="editSourcePaperName" label="来源试卷名称" outlined dense />
+          </div>
+          <div class="col-6">
+            <q-input v-model="editQuestionNumber" label="题号" outlined dense />
+          </div>
+        </div>
         <q-select v-model="editSubject" :options="subjects" label="科目" clearable outlined dense class="q-mb-md" />
+        <div class="q-mb-md">
+          <span class="text-caption q-mr-sm">难度</span>
+          <q-rating v-model="editDifficulty" :max="5" size="1.5em" icon="star_border" icon-selected="star" color="orange" />
+        </div>
         <q-input v-model="editTagInput" label="标签（回车添加）" outlined dense class="q-mb-md" @keydown.enter.prevent="addEditTag" />
         <div class="q-mb-md">
           <q-chip v-for="(tag, idx) in editTags" :key="idx" removable @remove="editTags.splice(idx, 1)" size="sm" color="primary" text-color="white">{{ tag }}</q-chip>
         </div>
 
-        <div class="text-weight-medium q-mb-sm">答案</div>
-        <q-input v-model="editAnswer" label="答案（支持 Markdown）" outlined dense autogrow type="textarea" class="q-mb-md" />
-        <ImageUploader ref="editAnswerUploaderRef" @change="onEditAnswerImagesChanged" />
-        <div v-if="editAnswerImages.length > 0" class="row q-gutter-sm q-mb-md">
-          <div v-for="(url, idx) in editAnswerImages" :key="idx" class="col-4 relative-position">
-            <q-img :src="url" style="height: 80px" class="rounded-borders" />
-            <q-btn flat round dense size="sm" icon="close" class="absolute-top-right bg-white" @click="editAnswerImages.splice(idx, 1)" />
-          </div>
-        </div>
+        <div class="text-weight-medium q-mb-sm">题目内容 (Markdown)</div>
+        <q-input v-model="editContent" outlined dense autogrow type="textarea" class="q-mb-md font-mono" input-style="min-height: 80px; font-family: monospace; font-size: 13px" />
 
-        <q-select v-model="editDifficulty" :options="difficulties" label="难度" clearable outlined dense class="q-mb-md" />
+        <div class="text-weight-medium q-mb-sm">答案 (Markdown)</div>
+        <q-input v-model="editAnswer" outlined dense autogrow type="textarea" class="q-mb-md font-mono" input-style="min-height: 80px; font-family: monospace; font-size: 13px" />
+
         <q-input v-model="editKpInput" label="知识点（回车添加）" outlined dense class="q-mb-md" @keydown.enter.prevent="addEditKp" />
         <div class="q-mb-md">
           <q-chip v-for="(kp, idx) in editKnowledgePoints" :key="idx" removable @remove="editKnowledgePoints.splice(idx, 1)" color="secondary" text-color="white" size="sm">{{ kp }}</q-chip>
@@ -151,9 +158,6 @@ import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { useMistakeStore } from '@/stores/mistakeStore';
 import AIAnalysisCard from '@/components/AIAnalysisCard.vue';
-import ImageUploader from '@/components/ImageUploader.vue';
-import { calculateSM2 } from '@/services/sm2';
-import { compressToDataUrl } from '@/services/ocrService';
 import { renderMarkdown } from '@/utils/markdown';
 
 const $q = useQuasar();
@@ -161,24 +165,34 @@ const route = useRoute();
 const router = useRouter();
 const mistakeStore = useMistakeStore();
 
-const slide = ref(0);
 const editing = ref(false);
 const editTitle = ref('');
+const editContent = ref('');
 const editSubject = ref('');
+const editYear = ref('');
+const editKnowledgeArea = ref('');
+const editSourcePaperType = ref('');
+const editSourcePaperName = ref('');
+const editQuestionNumber = ref('');
 const editTags = ref<string[]>([]);
 const editAnswer = ref('');
-const editAnswerImages = ref<string[]>([]);
-const editDifficulty = ref('');
+const editDifficulty = ref(0);
 const editKnowledgePoints = ref<string[]>([]);
 const editKpInput = ref('');
 const editNotes = ref('');
 const editTagInput = ref('');
 
 const subjects = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
-const difficulties = ['简单', '中等', '困难'];
+const yearOptions = Array.from({ length: 10 }, (_, i) => String(new Date().getFullYear() - i));
+const knowledgeAreas = ['代数', '几何', '函数', '概率统计', '数列', '三角', '向量', '解析几何', '立体几何', '其他'];
+const paperTypes = ['月考', '期中', '期末', '模拟', '高考真题', '竞赛', '单元测试', '其他'];
 const id = route.params.id as string;
 
 const mistake = computed(() => mistakeStore.getMistakeById(id));
+
+const renderedContent = computed(() => {
+  return mistake.value?.content ? renderMarkdown(mistake.value.content) : '';
+});
 
 const renderedAnswer = computed(() => {
   return mistake.value?.answer ? renderMarkdown(mistake.value.answer) : '';
@@ -198,11 +212,6 @@ const masteryLabel = computed(() => {
   return mistake.value?.masteryLevel ? map[mistake.value.masteryLevel] || '未掌握' : '未掌握';
 });
 
-const difficultyLabel = computed(() => {
-  const map: Record<string, string> = { '简单': '简单', '中等': '中等', '困难': '困难' };
-  return mistake.value?.difficulty ? map[mistake.value.difficulty] || mistake.value.difficulty : '';
-});
-
 const masteryColor = computed(() => {
   const map: Record<string, string> = { fresh: 'negative', hesitant: 'orange', smooth: 'positive' };
   return mistake.value?.masteryLevel ? map[mistake.value.masteryLevel] || 'grey' : 'grey';
@@ -219,11 +228,16 @@ const nextReviewDate = computed(() => {
 watch(() => mistake.value, (m) => {
   if (m) {
     editTitle.value = m.title;
+    editContent.value = m.content || '';
     editSubject.value = m.subject;
+    editYear.value = m.year || '';
+    editKnowledgeArea.value = m.knowledgeArea || '';
+    editSourcePaperType.value = m.sourcePaperType || '';
+    editSourcePaperName.value = m.sourcePaperName || '';
+    editQuestionNumber.value = m.questionNumber || '';
     editTags.value = [...m.tags];
     editAnswer.value = m.answer || '';
-    editAnswerImages.value = [...(m.answerImages || [])];
-    editDifficulty.value = m.difficulty || '';
+    editDifficulty.value = m.difficulty || 0;
     editKnowledgePoints.value = [...(m.knowledgePoints || [])];
     editNotes.value = m.notes;
   }
@@ -252,11 +266,16 @@ function addEditKp() {
 function startEdit() {
   if (!mistake.value) return;
   editTitle.value = mistake.value.title;
+  editContent.value = mistake.value.content || '';
   editSubject.value = mistake.value.subject;
+  editYear.value = mistake.value.year || '';
+  editKnowledgeArea.value = mistake.value.knowledgeArea || '';
+  editSourcePaperType.value = mistake.value.sourcePaperType || '';
+  editSourcePaperName.value = mistake.value.sourcePaperName || '';
+  editQuestionNumber.value = mistake.value.questionNumber || '';
   editTags.value = [...mistake.value.tags];
   editAnswer.value = mistake.value.answer || '';
-  editAnswerImages.value = [...(mistake.value.answerImages || [])];
-  editDifficulty.value = mistake.value.difficulty || '';
+  editDifficulty.value = mistake.value.difficulty || 0;
   editKnowledgePoints.value = [...(mistake.value.knowledgePoints || [])];
   editNotes.value = mistake.value.notes;
   editing.value = true;
@@ -264,47 +283,27 @@ function startEdit() {
 
 function cancelEdit() {
   editing.value = false;
-  // restore from current mistake
-  if (mistake.value) {
-    editAnswerImages.value = [...(mistake.value.answerImages || [])];
-  }
-}
-
-async function onEditAnswerImagesChanged(files: File[]) {
-  for (const file of files) {
-    const dataUrl = await compressToDataUrl(file);
-    editAnswerImages.value.push(dataUrl);
-  }
 }
 
 async function saveEdit() {
   if (!mistake.value) return;
   await mistakeStore.updateMistake(id, {
     title: editTitle.value,
+    content: editContent.value,
     subject: editSubject.value,
+    year: editYear.value,
+    knowledgeArea: editKnowledgeArea.value,
+    sourcePaperType: editSourcePaperType.value,
+    sourcePaperName: editSourcePaperName.value,
+    questionNumber: editQuestionNumber.value,
     tags: editTags.value,
     answer: editAnswer.value,
-    answerImages: editAnswerImages.value,
     difficulty: editDifficulty.value,
     knowledgePoints: editKnowledgePoints.value,
     notes: editNotes.value,
   });
   editing.value = false;
   $q.notify({ type: 'positive', message: '已更新', timeout: 1500 });
-}
-
-async function rateMistake(label: 'fresh' | 'hesitant' | 'smooth') {
-  if (!mistake.value) return;
-  const quality = label === 'fresh' ? 1 : label === 'hesitant' ? 3 : 5;
-  const prevData = mistake.value.sm2Data ? JSON.parse(mistake.value.sm2Data) : null;
-  const sm2 = calculateSM2(quality, prevData);
-  await mistakeStore.updateMistake(id, {
-    sm2Data: JSON.stringify(sm2),
-    masteryLevel: label,
-    reviewCount: mistake.value.reviewCount + 1,
-    lastReviewAt: new Date().toISOString(),
-  });
-  $q.notify({ type: 'positive', message: `已评价：${masteryLabel.value}`, timeout: 1500 });
 }
 
 async function deleteMistake() {
@@ -324,3 +323,14 @@ function openNote(noteId: string) {
   router.push({ name: 'note-detail', params: { id: noteId } });
 }
 </script>
+
+<style scoped>
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 8px 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+</style>
