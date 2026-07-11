@@ -92,11 +92,16 @@
         <div v-if="mistake.sm2Data" class="text-caption text-grey q-mb-md">
           下次复习：{{ nextReviewDate }}
         </div>
-        <div v-if="mistake.linkedNoteIds.length > 0" class="q-mt-md">
-          <div class="text-weight-medium q-mb-sm">关联笔记 ({{ mistake.linkedNoteIds.length }})</div>
-          <q-chip v-for="nid in mistake.linkedNoteIds" :key="nid" size="sm" color="secondary" text-color="white" clickable @click="openNote(nid)">
-            {{ nid.slice(0, 8) }}
-          </q-chip>
+        <div class="q-mt-md">
+          <div class="row items-center q-mb-sm">
+            <div class="text-weight-medium">关联笔记 ({{ linkedNotes.length }})</div>
+            <q-space />
+            <q-btn flat dense icon="link" label="管理" size="sm" @click="openLinkNoteDialog" />
+          </div>
+          <div v-if="linkedNotes.length > 0">
+            <q-chip v-for="n in linkedNotes" :key="n.id" size="sm" color="secondary" text-color="white" clickable @click="openNote(n.id)" icon="article" :label="n.title" />
+          </div>
+          <div v-else class="text-grey text-caption">暂无关联笔记</div>
         </div>
 
       </div>
@@ -117,14 +122,42 @@
         @cancel="showEditDialog = false"
       />
     </q-dialog>
+
+    <q-dialog v-model="showLinkNoteDialog">
+      <q-card style="min-width:450px;max-width:600px">
+        <q-card-section>
+          <div class="text-h6">管理关联笔记</div>
+          <q-input v-model="noteSearch" label="搜索笔记..." outlined dense clearable class="q-mt-sm" />
+        </q-card-section>
+        <q-card-section class="scroll" style="max-height:50vh;min-height:300px">
+          <div v-if="notesLoaded">
+            <q-item v-for="n in filteredNotes" :key="n.id" clickable v-ripple @click="toggleNoteLink(n)" class="q-mb-xs">
+              <q-item-section side>
+                <q-checkbox :model-value="isNoteLinked(n.id)" dense />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>{{ n.title }}</q-item-label>
+                <q-item-label caption>{{ n.subject || '未分类' }}{{ n.volume ? ' · ' + n.volume : '' }}{{ n.chapter ? ' · ' + n.chapter : '' }}</q-item-label>
+              </q-item-section>
+            </q-item>
+            <div v-if="filteredNotes.length === 0" class="text-center text-grey q-py-md">没有匹配的笔记</div>
+          </div>
+          <div v-else class="text-center text-grey q-py-md"><q-spinner size="24px" /> 加载中...</div>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="关闭" color="primary" @click="showLinkNoteDialog = false" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { useMistakeStore } from '@/stores/mistakeStore';
+import { useNoteStore, type NoteRecord } from '@/stores/noteStore';
 import MistakeForm from '@/components/MistakeForm.vue';
 import AIAnalysisCard from '@/components/AIAnalysisCard.vue';
 import { renderMarkdown } from '@/utils/markdown';
@@ -133,8 +166,12 @@ const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
 const mistakeStore = useMistakeStore();
+const noteStore = useNoteStore();
 
 const showEditDialog = ref(false);
+const showLinkNoteDialog = ref(false);
+const noteSearch = ref('');
+const notesLoaded = ref(false);
 const id = route.params.id as string;
 
 const mistake = computed(() => mistakeStore.getMistakeById(id));
@@ -174,9 +211,65 @@ const nextReviewDate = computed(() => {
   } catch { return ''; }
 });
 
+const linkedNotes = computed(() =>
+  (mistake.value?.linkedNoteIds || [])
+    .map(nid => noteStore.getNoteById(nid))
+    .filter(Boolean) as NoteRecord[]
+);
+
+const filteredNotes = computed(() => {
+  const q = noteSearch.value.trim().toLowerCase();
+  const all = noteStore.notes;
+  if (!q) return all;
+  return all.filter(n =>
+    n.title.toLowerCase().includes(q) ||
+    n.summary.toLowerCase().includes(q) ||
+    n.content.toLowerCase().includes(q)
+  );
+});
+
+function isNoteLinked(noteId: string): boolean {
+  return mistake.value?.linkedNoteIds?.includes(noteId) || false;
+}
+
+async function toggleNoteLink(note: NoteRecord) {
+  if (!mistake.value) return;
+  const linked = mistake.value.linkedNoteIds || [];
+  const already = linked.includes(note.id);
+  try {
+    if (already) {
+      await mistakeStore.updateMistake(id, { linkedNoteIds: linked.filter(x => x !== note.id) });
+      await noteStore.updateNote(note.id, { linkedMistakeIds: (note.linkedMistakeIds || []).filter(x => x !== id) });
+    } else {
+      await mistakeStore.updateMistake(id, { linkedNoteIds: [...linked, note.id] });
+      await noteStore.updateNote(note.id, { linkedMistakeIds: [...(note.linkedMistakeIds || []), id] });
+    }
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `关联失败：${e?.message || String(e)}`, timeout: 3000 });
+  }
+}
+
+function openLinkNoteDialog() {
+  if (noteStore.notes.length === 0) {
+    noteStore.fetchAll().then(() => { notesLoaded.value = true; });
+  } else {
+    notesLoaded.value = true;
+  }
+  noteSearch.value = '';
+  showLinkNoteDialog.value = true;
+}
+
 if (!mistake.value) {
   mistakeStore.fetchOne(id);
 }
+
+onMounted(() => {
+  if (noteStore.notes.length === 0) {
+    noteStore.fetchAll().then(() => { notesLoaded.value = true; });
+  } else {
+    notesLoaded.value = true;
+  }
+});
 
 async function handleEditSave(data: Record<string, any>) {
   if (!mistake.value) return;
