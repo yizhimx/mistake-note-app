@@ -141,162 +141,34 @@
     </div>
 
     <q-dialog v-model="showAddDialog" maximized persistent>
-      <q-card class="full-height">
-        <q-card-section class="row items-center q-pb-none q-pb-sm">
-          <div class="text-h6">添加错题</div>
-          <q-space />
-          <q-btn flat round dense icon="close" v-close-popup />
-        </q-card-section>
-        <q-separator />
-        <q-card-section class="scroll" style="height: calc(100vh - 100px)">
-          <div class="row q-gutter-sm" style="min-height: 100%">
-            <div class="col-12 col-md-8">
-              <div class="text-weight-medium q-mb-sm">单题详情</div>
-              <div class="row q-col-gutter-sm q-mb-md">
-                <div class="col-12">
-                  <q-input v-model="form.title" label="标题" outlined dense placeholder="给这道错题起个标题（可选，留空则从题目内容自动提取）" />
-                </div>
-                <div class="col-4">
-                  <q-select v-model="form.subject" :options="subjects" label="科目" clearable outlined dense @update:model-value="onSubjectChange" />
-                </div>
-                <div class="col-4">
-                  <q-select v-model="form.year" :options="yearOptions" label="年份" clearable outlined dense />
-                </div>
-                <div class="col-4">
-                  <q-select v-model="form.knowledgeArea" :options="knowledgeAreas" label="知识板块" clearable outlined dense :disable="!form.subject" />
-                </div>
-                <div class="col-4">
-                  <q-select v-model="form.sourcePaperType" :options="paperTypes" label="试卷类型" clearable outlined dense />
-                </div>
-                <div class="col-4">
-                  <q-input v-model="form.sourcePaperName" label="来源试卷名称" outlined dense />
-                </div>
-                <div class="col-4">
-                  <q-input v-model="form.questionNumber" label="题号" outlined dense />
-                </div>
-              </div>
-
-              <q-separator class="q-mb-md" />
-
-              <div class="text-weight-medium q-mb-sm">附加属性</div>
-              <div class="row q-col-gutter-sm q-mb-md">
-                <div class="col-4">
-                  <div class="text-caption q-mb-xs">难度</div>
-                  <q-rating v-model="form.difficulty" :max="5" size="1.5em" icon="star_border" icon-selected="star" color="orange" />
-                </div>
-                <div class="col-8">
-                  <q-input v-model="form.tagInput" label="标签（回车添加）" outlined dense @keydown.enter.prevent="addTag">
-                    <template v-slot:append><q-btn flat round dense icon="add" @click="addTag" /></template>
-                  </q-input>
-                </div>
-              </div>
-              <div class="q-mb-md">
-                <q-chip v-for="(tag, idx) in form.tags" :key="idx" removable @remove="form.tags.splice(idx, 1)" color="primary" text-color="white" size="sm">{{ tag }}</q-chip>
-              </div>
-              <q-input v-model="form.notes" label="备注" outlined dense autogrow type="textarea" class="q-mb-md" />
-
-              <q-separator class="q-mb-md" />
-
-              <div class="row items-center q-mb-sm">
-                <div class="text-weight-medium">题目内容 (Markdown)</div>
-                <q-space />
-                <q-btn flat dense no-caps icon="auto_awesome" label="文字识别" color="primary" size="sm" @click="runOcr" />
-              </div>
-              <div class="toolbar q-mb-xs q-gutter-xs">
-                <q-btn flat dense size="sm" icon="format_bold" @click="insertMarkdown('**', '**')" />
-                <q-btn flat dense size="sm" icon="format_italic" @click="insertMarkdown('*', '*')" />
-                <q-btn flat dense size="sm" icon="code" @click="insertMarkdown('`', '`')" />
-                <q-btn flat dense size="sm" icon="functions" @click="insertMarkdown('$$', '$$')" />
-                <q-btn flat dense size="sm" icon="image" @click="insertImage" />
-                <q-btn flat dense size="sm" icon="content_paste" color="grey" title="粘贴图片 (Ctrl+V)" @click="pasteImageFromClipboard('content')" />
-              </div>
-              <q-input ref="contentEditorRef" v-model="form.content" outlined dense autogrow type="textarea" class="q-mb-md font-mono content-editor" placeholder="用 Markdown 编写题目内容，支持 LaTeX：$\int_a^b f(x)dx$（Ctrl+V 可粘贴图片）" input-style="min-height: 120px; font-family: monospace; font-size: 13px" @paste="onContentPaste" />
-
-              <div class="text-weight-medium q-mb-sm">答案 (Markdown)</div>
-              <div class="toolbar q-mb-xs q-gutter-xs">
-                <q-btn flat dense size="sm" icon="format_bold" @click="insertAnswerMarkdown('**', '**')" />
-                <q-btn flat dense size="sm" icon="format_italic" @click="insertAnswerMarkdown('*', '*')" />
-                <q-btn flat dense size="sm" icon="code" @click="insertAnswerMarkdown('`', '`')" />
-                <q-btn flat dense size="sm" icon="functions" @click="insertAnswerMarkdown('$$', '$$')" />
-                <q-btn flat dense size="sm" icon="image" @click="insertAnswerImage" />
-                <q-btn flat dense size="sm" icon="content_paste" color="grey" title="粘贴图片 (Ctrl+V)" @click="pasteImageFromClipboard('answer')" />
-              </div>
-              <q-input ref="answerEditorRef" v-model="form.answer" outlined dense autogrow type="textarea" class="q-mb-md font-mono answer-editor" placeholder="答案内容，支持 Markdown 和 LaTeX（Ctrl+V 可粘贴图片）" input-style="min-height: 100px; font-family: monospace; font-size: 13px" @paste="onAnswerPaste" />
-            </div>
-
-            <!-- Right: Preview + Save -->
-            <div class="col-12 col-md-4">
-              <div class="text-weight-medium q-mb-sm">实时预览</div>
-              <div class="rounded-borders bg-grey-1 q-pa-sm" style="min-height: 200px; max-height: calc(100vh - 300px); overflow-y: auto; border: 1px solid #ddd">
-                <div class="markdown-preview" v-html="renderedPreview" />
-              </div>
-              <q-separator class="q-my-md" />
-              <q-btn color="primary" label="保存错题" :disable="!canSave" :loading="saving" @click="saveMistake" unelevated class="full-width" />
-            </div>
-          </div>
-        </q-card-section>
-      </q-card>
+      <MistakeForm
+        ref="mistakeFormRef"
+        mode="add"
+        @save="handleAddSave"
+        @cancel="showAddDialog = false"
+      />
     </q-dialog>
   </q-page>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue';
+import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { uid } from 'quasar';
+import MistakeForm from '@/components/MistakeForm.vue';
 import { useMistakeStore } from '@/stores/mistakeStore';
-import { compressToDataUrl } from '@/services/ocrService';
-import { saveImage } from '@/services/imageStore';
-import { renderMarkdown, buildExportHtml } from '@/utils/markdown';
+import { buildExportHtml } from '@/utils/markdown';
 
 const $q = useQuasar();
 const mistakeStore = useMistakeStore();
 
 const showAddDialog = ref(false);
-const saving = ref(false);
 
 const showFilter = ref(true);
 const selectedIds = ref<string[]>([]);
-
-const form = reactive({
-  title: '',
-  subject: null as string | null,
-  tagInput: '',
-  tags: [] as string[],
-  content: '',
-  answer: '',
-  difficulty: 0,
-  kpInput: '',
-  knowledgePoints: [] as string[],
-  notes: '',
-  year: null as string | null,
-  knowledgeArea: null as string | null,
-  sourcePaperType: null as string | null,
-  sourcePaperName: '',
-  questionNumber: '',
-});
+const mistakeFormRef = ref<any>(null);
 
 const subjects = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
-const yearOptions = Array.from({ length: 10 }, (_, i) => String(new Date().getFullYear() - i));
-const paperTypes = ['月考', '期中', '期末', '模拟', '高考真题', '竞赛', '单元测试', '其他'];
-
-// 知识板块按科目分类
-const subjectKnowledgeAreas: Record<string, string[]> = {
-  '数学': ['代数', '几何', '函数', '概率统计', '数列', '三角', '向量', '解析几何', '立体几何', '其他'],
-  '物理': ['力学', '热学', '电磁学', '光学', '原子物理', '其他'],
-  '化学': ['无机化学', '有机化学', '物理化学', '分析化学', '其他'],
-  '英语': ['语法', '词汇', '阅读', '完形填空', '写作', '听力', '其他'],
-  '语文': ['现代文阅读', '古诗文', '作文', '语言运用', '其他'],
-  '生物': ['细胞生物学', '遗传学', '生态学', '进化', '其他'],
-  '历史': ['中国古代史', '中国近现代史', '世界史', '其他'],
-  '地理': ['自然地理', '人文地理', '区域地理', '其他'],
-  '政治': ['经济生活', '政治生活', '文化生活', '哲学', '其他'],
-};
-
-const knowledgeAreas = computed(() => {
-  if (!form.subject) return [];
-  return subjectKnowledgeAreas[form.subject] || [];
-});
 
 const difficultyOptions = [
   { label: '1 星', value: 1 },
@@ -320,154 +192,14 @@ const pageSize = 10;
 
 const reviewList = computed(() => mistakeStore.todayReviewMistakes);
 
-const canSave = computed(() => form.content.trim().length > 0);
-
-const renderedPreview = computed(() => {
-  return form.content ? renderMarkdown(form.content) : '<span class="text-grey">输入题目内容后预览</span>';
-});
-
-const contentEditorRef = ref<any>(null);
-const answerEditorRef = ref<any>(null);
-
 onMounted(async () => {
   await mistakeStore.fetchAll();
 });
 
-function getContentTextarea(): HTMLTextAreaElement | null {
-  return contentEditorRef.value?.$el?.querySelector('textarea') || null;
-}
-
-function getAnswerTextarea(): HTMLTextAreaElement | null {
-  return answerEditorRef.value?.$el?.querySelector('textarea') || null;
-}
-
-async function compressAndSaveImage(file: File): Promise<string> {
-  const dataUrl = await compressToDataUrl(file);
-  return await saveImage(dataUrl);
-}
-
-function insertImageRef(ref: string, target: 'content' | 'answer') {
-  const setText = (v: string) => {
-    if (target === 'content') form.content = v;
-    else form.answer = v;
-  };
-  const text = target === 'content' ? form.content : form.answer;
-  const el = target === 'content' ? getContentTextarea() : getAnswerTextarea();
-  if (el) {
-    const start = el.selectionStart;
-    const tag = `![图片](${ref})`;
-    setText(text.slice(0, start) + tag + text.slice(start));
-    nextTick(() => { el.focus(); el.setSelectionRange(start + tag.length, start + tag.length); });
-  } else {
-    setText(text + `\n![图片](${ref})\n`);
-  }
-}
-
-function onContentPaste(e: ClipboardEvent) {
-  const items = e.clipboardData?.items;
-  if (!items) return;
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].type.startsWith('image/')) {
-      e.preventDefault();
-      const file = items[i].getAsFile();
-      if (!file) continue;
-      compressAndSaveImage(file).then(ref => insertImageRef(ref, 'content'));
-      break;
-    }
-  }
-}
-
-function onAnswerPaste(e: ClipboardEvent) {
-  const items = e.clipboardData?.items;
-  if (!items) return;
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].type.startsWith('image/')) {
-      e.preventDefault();
-      const file = items[i].getAsFile();
-      if (!file) continue;
-      compressAndSaveImage(file).then(ref => insertImageRef(ref, 'answer'));
-      break;
-    }
-  }
-}
-
-function insertMarkdown(before: string, after: string) {
-  const el = getContentTextarea();
-  if (!el) return;
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  const text = form.content;
-  form.content = text.slice(0, start) + before + text.slice(start, end) + after + text.slice(end);
-  nextTick(() => { el.focus(); el.setSelectionRange(start + before.length, end + before.length); });
-}
-
-async function insertImage() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*';
-  input.onchange = async () => {
-    const file = input.files?.[0];
-    if (!file) return;
-    const ref = await compressAndSaveImage(file);
-    insertImageRef(ref, 'content');
-  };
-  input.click();
-}
-
-function insertAnswerMarkdown(before: string, after: string) {
-  const el = getAnswerTextarea();
-  if (!el) return;
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  const text = form.answer;
-  form.answer = text.slice(0, start) + before + text.slice(start, end) + after + text.slice(end);
-  nextTick(() => { el.focus(); el.setSelectionRange(start + before.length, end + before.length); });
-}
-
-async function insertAnswerImage() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*';
-  input.onchange = async () => {
-    const file = input.files?.[0];
-    if (!file) return;
-    const ref = await compressAndSaveImage(file);
-    insertImageRef(ref, 'answer');
-  };
-  input.click();
-}
-
-function runOcr() {
-  $q.notify({ type: 'info', message: 'OCR 功能将在后续版本接入', timeout: 2000 });
-}
-
-function addTag() {
-  const t = form.tagInput.trim();
-  if (t && !form.tags.includes(t)) {
-    form.tags.push(t);
-    form.tagInput = '';
-  }
-}
-
-function onSubjectChange() {
-  // 切换科目时清空知识板块（因为不同科目对应不同知识板块）
-  form.knowledgeArea = null;
-}
-
-function addKp() {
-  const k = form.kpInput.trim();
-  if (k && !form.knowledgePoints.includes(k)) {
-    form.knowledgePoints.push(k);
-    form.kpInput = '';
-  }
-}
-
-async function saveMistake() {
-  if (!canSave.value) return;
-  saving.value = true;
+async function handleAddSave(data: Record<string, any>) {
   try {
-    const title = form.title.trim() || (() => {
-      const firstLine = form.content.trim().split('\n')[0] || '';
+    const title = data.title?.trim() || (() => {
+      const firstLine = (data.content || '').trim().split('\n')[0] || '';
       const stripped = firstLine.replace(/!\[.*?\]\(.*?\)/g, '').replace(/[#*`$]/g, '').trim();
       return stripped.slice(0, 30) || `错题 ${new Date().toLocaleDateString()}`;
     })();
@@ -477,19 +209,20 @@ async function saveMistake() {
     const record = {
       id,
       title,
-      content: form.content,
+      content: data.content,
       imageUrls: [],
-      tags: [...form.tags],
-      subject: form.subject || '',
-      answer: form.answer,
+      tags: data.tags || [],
+      subject: data.subject || '',
+      answer: data.answer || '',
       answerImages: [],
-      difficulty: form.difficulty,
-      knowledgePoints: [...form.knowledgePoints],
-      year: form.year || '',
-      knowledgeArea: form.knowledgeArea || '',
-      sourcePaperType: form.sourcePaperType || '',
-      sourcePaperName: form.sourcePaperName,
-      questionNumber: form.questionNumber,
+      difficulty: data.difficulty || 0,
+      knowledgePoints: data.knowledgePoints || [],
+      year: data.year || '',
+      knowledgeArea: data.knowledgeArea || '',
+      sourcePaperType: data.sourcePaperType || '',
+      sourcePaperName: data.sourcePaperName || '',
+      questionNumber: data.questionNumber || '',
+      notes: data.notes || '',
       aiAnalysis: null,
       ocrText: null,
       createdAt: now,
@@ -501,33 +234,14 @@ async function saveMistake() {
       linkedNoteIds: [],
       synced: false,
     };
-    await mistakeStore.addMistake(record as MistakeRecord);
+    await mistakeStore.addMistake(record as any);
     showAddDialog.value = false;
-    resetForm();
+    mistakeFormRef.value?.resetForm();
     $q.notify({ type: 'positive', message: '错题已保存', timeout: 2000 });
   } catch (e: any) {
     console.error('Save error:', e);
     $q.notify({ type: 'negative', message: `保存失败：${e?.message || String(e) || '未知错误'}`, timeout: 3000 });
-  } finally {
-    saving.value = false;
   }
-}
-
-function resetForm() {
-  form.subject = null;
-  form.tagInput = '';
-  form.tags = [];
-  form.content = '';
-  form.answer = '';
-  form.difficulty = 0;
-  form.kpInput = '';
-  form.knowledgePoints = [];
-  form.notes = '';
-  form.year = null;
-  form.knowledgeArea = null;
-  form.sourcePaperType = null;
-  form.sourcePaperName = '';
-  form.questionNumber = '';
 }
 
 function deleteMistake(id: string) {

@@ -6,7 +6,7 @@
       <q-btn flat icon="more_vert" round>
         <q-menu auto-close>
           <q-list dense>
-            <q-item clickable @click="startEdit">
+            <q-item clickable @click="showEditDialog = true">
               <q-item-section>编辑</q-item-section>
             </q-item>
             <q-separator />
@@ -36,7 +36,7 @@
         </div>
       </div>
 
-      <div class="col-12 col-md-5 q-pl-md" v-if="!editing">
+      <div class="col-12 col-md-5 q-pl-md">
         <div class="text-h5">{{ mistake.title }}</div>
         <div class="q-mt-sm">
           <q-chip v-for="tag in mistake.tags" :key="tag" size="sm" color="primary" text-color="white">{{ tag }}</q-chip>
@@ -98,65 +98,31 @@
 
       </div>
 
-      <div class="col-12 col-md-5 q-pl-md" v-if="editing">
-        <q-input v-model="editTitle" label="标题" outlined dense class="q-mb-md" />
-        <div class="row q-col-gutter-sm q-mb-md">
-          <div class="col-4">
-            <q-select v-model="editYear" :options="yearOptions" label="年份" clearable outlined dense />
-          </div>
-          <div class="col-4">
-            <q-select v-model="editKnowledgeArea" :options="knowledgeAreas" label="知识板块" clearable outlined dense />
-          </div>
-          <div class="col-4">
-            <q-select v-model="editSourcePaperType" :options="paperTypes" label="试卷类型" clearable outlined dense />
-          </div>
-          <div class="col-6">
-            <q-input v-model="editSourcePaperName" label="来源试卷名称" outlined dense />
-          </div>
-          <div class="col-6">
-            <q-input v-model="editQuestionNumber" label="题号" outlined dense />
-          </div>
-        </div>
-        <q-select v-model="editSubject" :options="subjects" label="科目" clearable outlined dense class="q-mb-md" />
-        <div class="q-mb-md">
-          <span class="text-caption q-mr-sm">难度</span>
-          <q-rating v-model="editDifficulty" :max="5" size="1.5em" icon="star_border" icon-selected="star" color="orange" />
-        </div>
-        <q-input v-model="editTagInput" label="标签（回车添加）" outlined dense class="q-mb-md" @keydown.enter.prevent="addEditTag" />
-        <div class="q-mb-md">
-          <q-chip v-for="(tag, idx) in editTags" :key="idx" removable @remove="editTags.splice(idx, 1)" size="sm" color="primary" text-color="white">{{ tag }}</q-chip>
-        </div>
-
-        <div class="text-weight-medium q-mb-sm">题目内容 (Markdown)</div>
-        <q-input v-model="editContent" outlined dense autogrow type="textarea" class="q-mb-md font-mono" input-style="min-height: 80px; font-family: monospace; font-size: 13px" />
-
-        <div class="text-weight-medium q-mb-sm">答案 (Markdown)</div>
-        <q-input v-model="editAnswer" outlined dense autogrow type="textarea" class="q-mb-md font-mono" input-style="min-height: 80px; font-family: monospace; font-size: 13px" />
-
-        <q-input v-model="editKpInput" label="知识点（回车添加）" outlined dense class="q-mb-md" @keydown.enter.prevent="addEditKp" />
-        <div class="q-mb-md">
-          <q-chip v-for="(kp, idx) in editKnowledgePoints" :key="idx" removable @remove="editKnowledgePoints.splice(idx, 1)" color="secondary" text-color="white" size="sm">{{ kp }}</q-chip>
-        </div>
-        <q-input v-model="editNotes" label="备注" outlined dense autogrow type="textarea" class="q-mb-md" />
-        <div class="row q-gutter-sm">
-          <q-btn color="primary" label="保存" @click="saveEdit" unelevated />
-          <q-btn flat label="取消" @click="cancelEdit" />
-        </div>
-      </div>
     </div>
 
     <div v-else class="text-center q-mt-xl text-grey">
       <q-spinner size="40px" />
       <p class="q-mt-sm">加载中...</p>
     </div>
+
+    <q-dialog v-model="showEditDialog" maximized persistent>
+      <MistakeForm
+        v-if="mistake"
+        mode="edit"
+        :initial-data="mistake"
+        @save="handleEditSave"
+        @cancel="showEditDialog = false"
+      />
+    </q-dialog>
   </q-page>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { useMistakeStore } from '@/stores/mistakeStore';
+import MistakeForm from '@/components/MistakeForm.vue';
 import AIAnalysisCard from '@/components/AIAnalysisCard.vue';
 import { renderMarkdown } from '@/utils/markdown';
 
@@ -165,27 +131,7 @@ const route = useRoute();
 const router = useRouter();
 const mistakeStore = useMistakeStore();
 
-const editing = ref(false);
-const editTitle = ref('');
-const editContent = ref('');
-const editSubject = ref('');
-const editYear = ref('');
-const editKnowledgeArea = ref('');
-const editSourcePaperType = ref('');
-const editSourcePaperName = ref('');
-const editQuestionNumber = ref('');
-const editTags = ref<string[]>([]);
-const editAnswer = ref('');
-const editDifficulty = ref(0);
-const editKnowledgePoints = ref<string[]>([]);
-const editKpInput = ref('');
-const editNotes = ref('');
-const editTagInput = ref('');
-
-const subjects = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
-const yearOptions = Array.from({ length: 10 }, (_, i) => String(new Date().getFullYear() - i));
-const knowledgeAreas = ['代数', '几何', '函数', '概率统计', '数列', '三角', '向量', '解析几何', '立体几何', '其他'];
-const paperTypes = ['月考', '期中', '期末', '模拟', '高考真题', '竞赛', '单元测试', '其他'];
+const showEditDialog = ref(false);
 const id = route.params.id as string;
 
 const mistake = computed(() => mistakeStore.getMistakeById(id));
@@ -225,85 +171,34 @@ const nextReviewDate = computed(() => {
   } catch { return ''; }
 });
 
-watch(() => mistake.value, (m) => {
-  if (m) {
-    editTitle.value = m.title;
-    editContent.value = m.content || '';
-    editSubject.value = m.subject;
-    editYear.value = m.year || '';
-    editKnowledgeArea.value = m.knowledgeArea || '';
-    editSourcePaperType.value = m.sourcePaperType || '';
-    editSourcePaperName.value = m.sourcePaperName || '';
-    editQuestionNumber.value = m.questionNumber || '';
-    editTags.value = [...m.tags];
-    editAnswer.value = m.answer || '';
-    editDifficulty.value = m.difficulty || 0;
-    editKnowledgePoints.value = [...(m.knowledgePoints || [])];
-    editNotes.value = m.notes;
-  }
-}, { immediate: true });
-
 if (!mistake.value) {
   mistakeStore.fetchOne(id);
 }
 
-function addEditTag() {
-  const t = editTagInput.value.trim();
-  if (t && !editTags.value.includes(t)) {
-    editTags.value.push(t);
-    editTagInput.value = '';
-  }
-}
-
-function addEditKp() {
-  const k = editKpInput.value.trim();
-  if (k && !editKnowledgePoints.value.includes(k)) {
-    editKnowledgePoints.value.push(k);
-    editKpInput.value = '';
-  }
-}
-
-function startEdit() {
+async function handleEditSave(data: Record<string, any>) {
   if (!mistake.value) return;
-  editTitle.value = mistake.value.title;
-  editContent.value = mistake.value.content || '';
-  editSubject.value = mistake.value.subject;
-  editYear.value = mistake.value.year || '';
-  editKnowledgeArea.value = mistake.value.knowledgeArea || '';
-  editSourcePaperType.value = mistake.value.sourcePaperType || '';
-  editSourcePaperName.value = mistake.value.sourcePaperName || '';
-  editQuestionNumber.value = mistake.value.questionNumber || '';
-  editTags.value = [...mistake.value.tags];
-  editAnswer.value = mistake.value.answer || '';
-  editDifficulty.value = mistake.value.difficulty || 0;
-  editKnowledgePoints.value = [...(mistake.value.knowledgePoints || [])];
-  editNotes.value = mistake.value.notes;
-  editing.value = true;
-}
-
-function cancelEdit() {
-  editing.value = false;
-}
-
-async function saveEdit() {
-  if (!mistake.value) return;
-  await mistakeStore.updateMistake(id, {
-    title: editTitle.value,
-    content: editContent.value,
-    subject: editSubject.value,
-    year: editYear.value,
-    knowledgeArea: editKnowledgeArea.value,
-    sourcePaperType: editSourcePaperType.value,
-    sourcePaperName: editSourcePaperName.value,
-    questionNumber: editQuestionNumber.value,
-    tags: editTags.value,
-    answer: editAnswer.value,
-    difficulty: editDifficulty.value,
-    knowledgePoints: editKnowledgePoints.value,
-    notes: editNotes.value,
-  });
-  editing.value = false;
-  $q.notify({ type: 'positive', message: '已更新', timeout: 1500 });
+  try {
+    const title = data.title?.trim() || mistake.value.title;
+    await mistakeStore.updateMistake(id, {
+      title,
+      content: data.content,
+      answer: data.answer || '',
+      tags: data.tags || [],
+      subject: data.subject || '',
+      difficulty: data.difficulty || 0,
+      knowledgePoints: data.knowledgePoints || [],
+      notes: data.notes || '',
+      year: data.year || '',
+      knowledgeArea: data.knowledgeArea || '',
+      sourcePaperType: data.sourcePaperType || '',
+      sourcePaperName: data.sourcePaperName || '',
+      questionNumber: data.questionNumber || '',
+    });
+    showEditDialog.value = false;
+    $q.notify({ type: 'positive', message: '已更新', timeout: 1500 });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `更新失败：${e?.message || String(e)}`, timeout: 3000 });
+  }
 }
 
 async function deleteMistake() {

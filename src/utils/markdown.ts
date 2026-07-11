@@ -88,18 +88,27 @@ export async function buildExportHtml(mistakes: Array<{
       <h2>${idx + 1}. ${m.title || '未命名错题'}</h2>
       <table class="meta-table">
         <tr><td>科目</td><td>${m.subject || '未分类'}</td></tr>
-        <tr><td>难度</td><td>${m.difficulty || '-'}</td></tr>
+        <tr><td>难度</td><td>${'★'.repeat(Math.min(m.difficulty || 0, 5))}${'☆'.repeat(Math.max(0, 5 - (m.difficulty || 0)))}</td></tr>
         <tr><td>标签</td><td>${m.tags.join(', ') || '-'}</td></tr>
         <tr><td>知识点</td><td>${m.knowledgePoints.join(', ') || '-'}</td></tr>
         <tr><td>掌握度</td><td>${m.masteryLevel ? masteryMap[m.masteryLevel] || m.masteryLevel : '未掌握'}</td></tr>
         <tr><td>复习次数</td><td>${m.reviewCount}</td></tr>
         <tr><td>录入时间</td><td>${m.createdAt.slice(0, 10)}</td></tr>
-        <tr><td>备注</td><td>${m.notes || '-'}</td></tr>
       </table>
-      ${contentHtml || imagesHtml}
-      ${answerHtml}
-      ${answerImagesHtml}
-      ${aiHtml}
+      <div class="split-body">
+        <div class="split-col split-left">
+          <div class="split-label">题目</div>
+          ${contentHtml || imagesHtml || '<span class="text-muted">无题目内容</span>'}
+          ${m.notes ? `<div class="notes-section"><strong>备注：</strong>${m.notes}</div>` : ''}
+        </div>
+        <div class="split-divider"></div>
+        <div class="split-col split-right">
+          <div class="split-label">答案</div>
+          ${answerHtml || '<span class="text-muted">暂无答案</span>'}
+          ${answerImagesHtml}
+          ${aiHtml}
+        </div>
+      </div>
     </div>`;
   }).join('<hr>');
 
@@ -120,6 +129,13 @@ export async function buildExportHtml(mistakes: Array<{
   ol { padding-left: 20px; }
   .katex { font-size: 1.1em; }
   .katex-error { color: red; }
+  .split-body { display: flex; border: 1px solid #ddd; border-radius: 6px; margin-top: 12px; min-height: 200px; }
+  .split-col { flex: 1; padding: 14px; }
+  .split-left { border-right: 2px dashed #ccc; }
+  .split-divider { display: none; }
+  .split-label { font-weight: bold; font-size: 0.85em; color: #666; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #eee; text-transform: uppercase; letter-spacing: 2px; }
+  .text-muted { color: #999; font-style: italic; }
+  .notes-section { margin-top: 10px; padding: 8px 10px; background: #f9f9f9; border-radius: 4px; font-size: 0.9em; border-left: 3px solid #ccc; }
 </style></head><body>
   <h1>错题导出</h1>
   <p style="text-align:center;color:#666">导出时间：${new Date().toLocaleString()}</p>
