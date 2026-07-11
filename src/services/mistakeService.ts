@@ -2,6 +2,13 @@ import { getDb, saveDb } from './db';
 import type { MistakeRecord } from '@/stores/mistakeStore';
 
 function toDb(row: any): MistakeRecord {
+  let knowledgeAreas: string[];
+  try {
+    knowledgeAreas = JSON.parse(row.knowledge_areas || '[]');
+    if (!Array.isArray(knowledgeAreas)) knowledgeAreas = [];
+  } catch {
+    knowledgeAreas = row.knowledge_area ? [row.knowledge_area] : [];
+  }
   return {
     id: row.id,
     title: row.title || '',
@@ -15,7 +22,7 @@ function toDb(row: any): MistakeRecord {
     difficulty: parseInt(row.difficulty, 10) || 0,
     knowledgePoints: JSON.parse(row.knowledge_points || '[]'),
     year: row.year || '',
-    knowledgeArea: row.knowledge_area || '',
+    knowledgeAreas,
     sourcePaperType: row.source_paper_type || '',
     sourcePaperName: row.source_paper_name || '',
     questionNumber: row.question_number || '',
@@ -50,7 +57,7 @@ function toDbRow(r: MistakeRecord) {
     safe(String(r.difficulty || 0)),
     safe(JSON.stringify(r.knowledgePoints || [])),
     safe(r.year || ''),
-    safe(r.knowledgeArea || ''),
+    safe(JSON.stringify(r.knowledgeAreas || [])),
     safe(r.sourcePaperType || ''),
     safe(r.sourcePaperName || ''),
     safe(r.questionNumber || ''),
@@ -82,7 +89,7 @@ export async function fetchMistakeById(id: string): Promise<MistakeRecord | null
 const INSERT_COLS = [
   'id', 'title', 'content', 'image_urls', 'tags', 'subject', 'notes',
   'answer', 'answer_images', 'difficulty', 'knowledge_points',
-  'year', 'knowledge_area', 'source_paper_type', 'source_paper_name', 'question_number',
+  'year', 'knowledge_areas', 'source_paper_type', 'source_paper_name', 'question_number',
   'ai_analysis', 'ocr_text', 'created_at', 'updated_at',
   'review_count', 'last_review_at', 'mastery_level', 'sm2_data',
   'linked_note_ids', 'synced',
@@ -106,7 +113,7 @@ export async function addMistake(r: MistakeRecord): Promise<void> {
 const UPDATE_COLS = [
   'title', 'content', 'image_urls', 'tags', 'subject', 'notes',
   'answer', 'answer_images', 'difficulty', 'knowledge_points',
-  'year', 'knowledge_area', 'source_paper_type', 'source_paper_name', 'question_number',
+  'year', 'knowledge_areas', 'source_paper_type', 'source_paper_name', 'question_number',
   'ai_analysis', 'ocr_text', 'updated_at',
   'review_count', 'last_review_at', 'mastery_level', 'sm2_data',
   'linked_note_ids', 'synced',
@@ -132,7 +139,7 @@ export async function updateMistake(id: string, data: Partial<MistakeRecord>): P
       safe(String(merged.difficulty || 0)),
       safe(JSON.stringify(merged.knowledgePoints || [])),
       safe(merged.year || ''),
-      safe(merged.knowledgeArea || ''),
+      safe(JSON.stringify(merged.knowledgeAreas || [])),
       safe(merged.sourcePaperType || ''),
       safe(merged.sourcePaperName || ''),
       safe(merged.questionNumber || ''),

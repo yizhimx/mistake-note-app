@@ -48,7 +48,10 @@
         <div class="q-mb-md">
           <div class="row text-caption text-grey">
             <div class="col-6" v-if="mistake.year">年份：{{ mistake.year }}</div>
-            <div class="col-6" v-if="mistake.knowledgeArea">知识板块：{{ mistake.knowledgeArea }}</div>
+            <div class="col-6" v-if="mistake.knowledgeAreas?.length">
+              知识板块：
+              <q-chip v-for="ka in mistake.knowledgeAreas" :key="ka" dense size="sm" color="secondary" text-color="white" class="q-mr-xs">{{ ka }}</q-chip>
+            </div>
             <div class="col-6" v-if="mistake.sourcePaperType">试卷类型：{{ mistake.sourcePaperType }}</div>
             <div class="col-6" v-if="mistake.sourcePaperName">试卷名称：{{ mistake.sourcePaperName }}</div>
             <div class="col-6" v-if="mistake.questionNumber">题号：{{ mistake.questionNumber }}</div>
@@ -189,7 +192,7 @@ async function handleEditSave(data: Record<string, any>) {
       knowledgePoints: data.knowledgePoints || [],
       notes: data.notes || '',
       year: data.year || '',
-      knowledgeArea: data.knowledgeArea || '',
+      knowledgeAreas: data.knowledgeAreas || [],
       sourcePaperType: data.sourcePaperType || '',
       sourcePaperName: data.sourcePaperName || '',
       questionNumber: data.questionNumber || '',

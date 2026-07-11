@@ -22,7 +22,7 @@ export interface MistakeRecord {
   difficulty: number;
   knowledgePoints: string[];
   year: string;
-  knowledgeArea: string;
+  knowledgeAreas: string[];
   sourcePaperType: string;
   sourcePaperName: string;
   questionNumber: string;

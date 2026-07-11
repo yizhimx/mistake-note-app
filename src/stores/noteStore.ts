@@ -10,9 +10,17 @@ import {
 export interface NoteRecord {
   id: string;
   title: string;
+  subject: string;
+  volume: string;
+  chapter: string;
+  section: string;
+  summary: string;
+  isFolder: boolean;
   content: string;
   plainText: string;
   tags: string[];
+  knowledgePoints: string[];
+  tips: string[];
   imageUrls: string[];
   linkedMistakeIds: string[];
   createdAt: string;
@@ -62,7 +70,7 @@ export const useNoteStore = defineStore('note', {
       await dbUpdate(id, data);
       const idx = this.notes.findIndex((n) => n.id === id);
       if (idx !== -1) {
-        this.notes[idx] = { ...this.notes[idx], ...data, updatedAt: new Date().toISOString() };
+        this.notes[idx] = { ...this.notes[idx], ...data, updatedAt: new Date().toISOString() } as NoteRecord;
       }
     },
     async removeNote(id: string) {

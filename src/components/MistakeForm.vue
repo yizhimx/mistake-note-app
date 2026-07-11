@@ -21,7 +21,7 @@
               <q-select v-model="form.year" :options="yearOptions" label="年份" clearable outlined dense />
             </div>
             <div class="col-4">
-              <q-select v-model="form.knowledgeArea" :options="knowledgeAreas" label="知识板块" clearable outlined dense :disable="!form.subject" />
+              <q-select v-model="form.knowledgeAreas" :options="knowledgeAreas" label="知识板块" clearable outlined dense multiple use-chips :disable="!form.subject" />
             </div>
             <div class="col-4">
               <q-select v-model="form.sourcePaperType" :options="paperTypes" label="试卷类型" clearable outlined dense />
@@ -136,7 +136,7 @@ const form = reactive({
   knowledgePoints: [] as string[],
   notes: '',
   year: null as string | null,
-  knowledgeArea: null as string | null,
+  knowledgeAreas: [] as string[],
   sourcePaperType: null as string | null,
   sourcePaperName: '',
   questionNumber: '',
@@ -181,7 +181,7 @@ watch(() => props.initialData, (data) => {
     form.knowledgePoints = [...(data.knowledgePoints || [])];
     form.notes = data.notes || '';
     form.year = data.year || null;
-    form.knowledgeArea = data.knowledgeArea || null;
+    form.knowledgeAreas = [...(data.knowledgeAreas || [])];
     form.sourcePaperType = data.sourcePaperType || null;
     form.sourcePaperName = data.sourcePaperName || '';
     form.questionNumber = data.questionNumber || '';
@@ -357,7 +357,7 @@ function addTag() {
 }
 
 function onSubjectChange() {
-  form.knowledgeArea = null;
+  form.knowledgeAreas = [];
 }
 
 function addKp() {
@@ -379,7 +379,7 @@ function resetForm() {
   form.knowledgePoints = [];
   form.notes = '';
   form.year = null;
-  form.knowledgeArea = null;
+  form.knowledgeAreas = [];
   form.sourcePaperType = null;
   form.sourcePaperName = '';
   form.questionNumber = '';
@@ -399,7 +399,7 @@ async function saveForm() {
       knowledgePoints: [...form.knowledgePoints],
       notes: form.notes,
       year: form.year || '',
-      knowledgeArea: form.knowledgeArea || '',
+      knowledgeAreas: [...form.knowledgeAreas],
       sourcePaperType: form.sourcePaperType || '',
       sourcePaperName: form.sourcePaperName,
       questionNumber: form.questionNumber,

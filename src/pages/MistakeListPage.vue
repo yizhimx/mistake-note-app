@@ -218,7 +218,7 @@ async function handleAddSave(data: Record<string, any>) {
       difficulty: data.difficulty || 0,
       knowledgePoints: data.knowledgePoints || [],
       year: data.year || '',
-      knowledgeArea: data.knowledgeArea || '',
+      knowledgeAreas: data.knowledgeAreas || [],
       sourcePaperType: data.sourcePaperType || '',
       sourcePaperName: data.sourcePaperName || '',
       questionNumber: data.questionNumber || '',
