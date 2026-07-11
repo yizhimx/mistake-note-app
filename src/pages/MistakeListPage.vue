@@ -9,6 +9,7 @@
         <q-btn v-if="selectedIds.length > 0" flat dense icon="file_download" color="primary" :label="`导出所选 (${selectedIds.length})`" @click="exportSelected" no-caps unelevated />
         <q-btn flat dense no-caps icon="filter_list" label="筛选" @click="showFilter = !showFilter" :color="hasActiveFilters ? 'primary' : 'grey'" />
         <q-btn v-if="hasActiveFilters" flat dense no-caps icon="clear" label="重置" color="grey" @click="clearFilters" />
+        <q-btn color="secondary" no-caps unelevated icon="auto_awesome" label="批量导入" @click="showBatchImport = true" class="q-mr-sm" />
         <q-btn color="primary" icon="add" label="添加错题" @click="showAddDialog = true" no-caps unelevated />
       </div>
     </div>
@@ -148,6 +149,8 @@
         @cancel="showAddDialog = false"
       />
     </q-dialog>
+
+    <BatchMistakeImportDialog v-model="showBatchImport" @imported="onBatchImported" />
   </q-page>
 </template>
 
@@ -156,6 +159,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { uid } from 'quasar';
 import MistakeForm from '@/components/MistakeForm.vue';
+import BatchMistakeImportDialog from '@/components/BatchMistakeImportDialog.vue';
 import { useMistakeStore } from '@/stores/mistakeStore';
 import { buildExportHtml } from '@/utils/markdown';
 
@@ -163,6 +167,7 @@ const $q = useQuasar();
 const mistakeStore = useMistakeStore();
 
 const showAddDialog = ref(false);
+const showBatchImport = ref(false);
 
 const showFilter = ref(true);
 const selectedIds = ref<string[]>([]);
@@ -242,6 +247,10 @@ async function handleAddSave(data: Record<string, any>) {
     console.error('Save error:', e);
     $q.notify({ type: 'negative', message: `保存失败：${e?.message || String(e) || '未知错误'}`, timeout: 3000 });
   }
+}
+
+function onBatchImported(count: number) {
+  $q.notify({ type: 'positive', message: `成功导入 ${count} 道错题`, timeout: 2000 });
 }
 
 function deleteMistake(id: string) {
