@@ -1,9 +1,28 @@
-import { api } from './api';
+import { getSetting } from './db';
 import { useSyncStore } from '@/stores/syncStore';
 import { uid } from 'quasar';
 
 let syncTimer: ReturnType<typeof setInterval> | null = null;
 const SYNC_INTERVAL = 30000;
+
+async function syncRequest<T>(method: string, path: string, body?: any): Promise<T> {
+  const baseUrl = (await getSetting('syncUrl')) || 'http://localhost:3001';
+  const token = (await getSetting('syncToken')) || '';
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  const res = await fetch(`${baseUrl}${path}`, init);
+  if (!res.ok) {
+    let detail = `Sync API Error: ${res.status} ${res.statusText}`;
+    try {
+      const b = await res.json();
+      if (b?.error) detail = b.error;
+    } catch { /* ignore */ }
+    throw new Error(detail);
+  }
+  return res.json() as T;
+}
 
 export function startSync() {
   if (syncTimer) return;
@@ -39,13 +58,13 @@ async function doSync() {
   try {
     const unsynced = store.operationQueue.filter((o) => !o.synced);
     if (unsynced.length > 0) {
-      await api.syncPush(unsynced);
+      await syncRequest('POST', '/sync/push', { operations: unsynced });
       unsynced.forEach((op) => {
         store.dequeue(op.id);
       });
     }
 
-    const result = await api.syncPull(store.lastSyncAt);
+    const result = await syncRequest('POST', '/sync/pull', { lastSyncAt: store.lastSyncAt });
     if (result?.operations) {
       store.lastSyncAt = new Date().toISOString();
     }
