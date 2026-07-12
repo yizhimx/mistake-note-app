@@ -22,6 +22,15 @@ export async function saveImage(dataUrl: string): Promise<string> {
   return dataUrl;
 }
 
+export async function saveImageData(ref: string, dataUrl: string): Promise<void> {
+  cache.set(ref, dataUrl);
+  trimCache();
+  if (ref.startsWith(IMAGE_PREFIX) && window.electronAPI?.saveImageAs) {
+    const name = ref.slice(IMAGE_PREFIX.length);
+    await window.electronAPI.saveImageAs(dataUrl, name);
+  }
+}
+
 export async function loadImage(ref: string): Promise<string | null> {
   if (cache.has(ref)) return cache.get(ref)!;
   if (ref.startsWith(IMAGE_PREFIX) && window.electronAPI) {

@@ -41,6 +41,15 @@ async function registerIpcHandlers() {
     return name;
   });
 
+  ipcMain.handle("image:saveAs", async (_event, dataUrl: string, filename: string) => {
+    const base64 = dataUrl.split(',')[1];
+    if (!base64) return null;
+    const buf = Buffer.from(base64, 'base64');
+    const filePath = path.join(getImagesDir(), filename);
+    await fs.promises.writeFile(filePath, buf);
+    return filename;
+  });
+
   ipcMain.handle("image:load", async (_event, name: string) => {
     const filePath = path.join(getImagesDir(), name);
     try {

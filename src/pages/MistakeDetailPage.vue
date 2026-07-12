@@ -161,6 +161,8 @@ import { useNoteStore, type NoteRecord } from '@/stores/noteStore';
 import MistakeForm from '@/components/MistakeForm.vue';
 import AIAnalysisCard from '@/components/AIAnalysisCard.vue';
 import { renderMarkdown } from '@/utils/markdown';
+import { directTextChat } from '@/services/directAi';
+import { getAiConfig } from '@/services/directAi';
 
 const $q = useQuasar();
 const route = useRoute();
@@ -192,6 +194,37 @@ const parsedAnalysis = computed(() => {
   } catch { /* not JSON */ }
   return null;
 });
+
+async function runAiAnalysisOnDetail() {
+  const m = mistake.value;
+  if (!m?.content) return;
+  const config = getAiConfig();
+  if (!config.aiApiKey) {
+    $q.notify({ type: 'warning', message: '请先在设置中填写 AI API Key', timeout: 2500 });
+    return;
+  }
+  try {
+    const loading = $q.loading.show({ message: 'AI 解析中...' });
+    const prompt = `你是一位严谨的学科教师，请解析以下错题。返回格式：
+
+## 正确答案
+（用 Markdown 写出正确答案）
+
+## 解题步骤
+（分步骤详细说明解题过程）
+
+题目内容：
+${m.content}`;
+    const content = await directTextChat(prompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。' });
+    loading();
+    const text = (content || '').trim();
+    await mistakeStore.updateMistake(m.id, { aiAnalysis: text });
+    await mistakeStore.fetchOne(m.id);
+    $q.notify({ type: 'positive', message: 'AI 解析完成', timeout: 2000 });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `AI 解析失败：${e?.message || String(e)}`, timeout: 3000 });
+  }
+}
 
 const masteryLabel = computed(() => {
   const map: Record<string, string> = { fresh: '生疏', hesitant: '犹豫', smooth: '顺利' };

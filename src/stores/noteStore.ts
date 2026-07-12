@@ -27,6 +27,7 @@ export interface NoteRecord {
   createdAt: string;
   updatedAt: string;
   synced: boolean;
+  isDeleted?: boolean;
 }
 
 export const useNoteStore = defineStore('note', {

@@ -2,7 +2,7 @@
   <q-layout view="hHh Lpr lFf">
     <q-header elevated class="bg-primary text-white">
       <q-toolbar>
-        <q-btn flat dense round icon="menu" aria-label="Menu" @click="toggleLeftDrawer" class="desktop-only" />
+        <q-btn flat dense round icon="menu" aria-label="Menu" @click="toggleLeftDrawer" />
 
         <q-toolbar-title class="text-weight-medium">
           错题助手
@@ -14,7 +14,7 @@
       </q-toolbar>
     </q-header>
 
-    <q-drawer v-model="leftDrawerOpen" show-if-above bordered class="desktop-only">
+    <q-drawer v-model="leftDrawerOpen" show-if-above bordered :breakpoint="768">
       <q-scroll-area class="fit">
         <q-list padding>
           <q-item-label header class="text-weight-bold text-grey-8">
@@ -139,7 +139,6 @@ const bottomTabs = [
   { name: 'review', label: '回顾', icon: 'autorenew' },
   { name: 'note-list', label: '笔记', icon: 'note_alt' },
   { name: 'calendar', label: '统计', icon: 'calendar_month' },
-  { name: 'queue-list', label: '队列', icon: 'queue' },
   { name: 'settings', label: '设置', icon: 'settings' },
 ];
 

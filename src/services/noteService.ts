@@ -21,6 +21,7 @@ function toDb(row: any): NoteRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     synced: row.synced === 1,
+    isDeleted: row.deleted === 1,
   };
 }
 
@@ -44,12 +45,13 @@ function toDbRow(r: NoteRecord) {
     r.createdAt,
     r.updatedAt,
     r.synced ? 1 : 0,
+    r.isDeleted ? 1 : 0,
   ];
 }
 
 export async function fetchNotes(): Promise<NoteRecord[]> {
   const db = await getDb();
-  const rows = await db.all('SELECT * FROM notes ORDER BY updated_at DESC');
+  const rows = await db.all('SELECT * FROM notes WHERE deleted = 0 ORDER BY updated_at DESC');
   return rows.map(toDb);
 }
 
@@ -62,7 +64,7 @@ export async function fetchNoteById(id: string): Promise<NoteRecord | null> {
 const NOTE_COLS = [
   'id', 'title', 'subject', 'volume', 'chapter', 'section', 'summary', 'is_folder',
   'content', 'plain_text', 'tags', 'knowledge_points', 'tips', 'image_urls',
-  'linked_mistake_ids', 'created_at', 'updated_at', 'synced',
+  'linked_mistake_ids', 'created_at', 'updated_at', 'synced', 'deleted',
 ];
 
 export async function addNote(r: NoteRecord): Promise<void> {
@@ -71,7 +73,7 @@ export async function addNote(r: NoteRecord): Promise<void> {
     `INSERT INTO notes (${NOTE_COLS.join(', ')}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     toDbRow(r),
   );
-  await saveDb();
+  saveDb();
 }
 
 function escapeSql(v: any): string {
@@ -91,7 +93,7 @@ export async function addNotes(records: NoteRecord[]): Promise<void> {
   }
   statements.push('COMMIT');
   await db.exec(statements.join('; '));
-  await saveDb();
+  saveDb();
 }
 
 export async function updateNote(id: string, data: Partial<NoteRecord>): Promise<void> {
@@ -102,7 +104,7 @@ export async function updateNote(id: string, data: Partial<NoteRecord>): Promise
   await db.run(
     `UPDATE notes SET
       title=?, subject=?, volume=?, chapter=?, section=?, summary=?, is_folder=?, content=?, plain_text=?,
-      tags=?, knowledge_points=?, tips=?, image_urls=?, linked_mistake_ids=?, updated_at=?, synced=?
+      tags=?, knowledge_points=?, tips=?, image_urls=?, linked_mistake_ids=?, updated_at=?, synced=?, deleted=?
     WHERE id=?`,
     [
       merged.title, merged.subject, merged.volume, merged.chapter, merged.section,
@@ -110,14 +112,15 @@ export async function updateNote(id: string, data: Partial<NoteRecord>): Promise
       JSON.stringify(merged.tags), JSON.stringify(merged.knowledgePoints),
       JSON.stringify(merged.tips), JSON.stringify(merged.imageUrls),
       JSON.stringify(merged.linkedMistakeIds), merged.updatedAt,
-      merged.synced ? 1 : 0, id,
+      merged.synced ? 1 : 0, merged.isDeleted ? 1 : 0, id,
     ],
   );
-  await saveDb();
+  saveDb();
 }
 
 export async function deleteNote(id: string): Promise<void> {
   const db = await getDb();
-  await db.run('DELETE FROM notes WHERE id = ?', [id]);
-  await saveDb();
+  const now = new Date().toISOString();
+  await db.run('UPDATE notes SET deleted = 1, synced = 0, updated_at = ? WHERE id = ?', [now, id]);
+  saveDb();
 }

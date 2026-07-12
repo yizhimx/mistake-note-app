@@ -77,7 +77,7 @@ export async function addQueueItem(item: AiQueueItem): Promise<void> {
       safe(item.processedAt),
     ],
   );
-  await saveDb();
+  saveDb();
 }
 
 export async function updateQueueItem(id: string, data: Partial<AiQueueItem>): Promise<void> {
@@ -97,19 +97,19 @@ export async function updateQueueItem(id: string, data: Partial<AiQueueItem>): P
   values.push(id);
   const db = await getDb();
   await db.run(`UPDATE ai_queue SET ${fields.join(', ')} WHERE id=?`, values);
-  await saveDb();
+  saveDb();
 }
 
 export async function deleteQueueItem(id: string): Promise<void> {
   const db = await getDb();
   await db.run('DELETE FROM ai_queue WHERE id = ?', [id]);
-  await saveDb();
+  saveDb();
 }
 
 export async function clearCompletedQueueItems(): Promise<void> {
   const db = await getDb();
   await db.run("DELETE FROM ai_queue WHERE status IN ('completed', 'failed', 'cancelled')");
-  await saveDb();
+  saveDb();
 }
 
 export async function deleteQueueItems(ids: string[]): Promise<void> {
@@ -117,5 +117,5 @@ export async function deleteQueueItems(ids: string[]): Promise<void> {
   const db = await getDb();
   const placeholders = ids.map(() => '?').join(', ');
   await db.run(`DELETE FROM ai_queue WHERE id IN (${placeholders})`, ids);
-  await saveDb();
+  saveDb();
 }

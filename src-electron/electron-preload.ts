@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getDbPath: () => ipcRenderer.invoke("db:getPath"),
   exportPdf: (html: string) => ipcRenderer.invoke("export:pdf", html),
   saveImage: (dataUrl: string) => ipcRenderer.invoke("image:save", dataUrl),
+  saveImageAs: (dataUrl: string, name: string) => ipcRenderer.invoke("image:saveAs", dataUrl, name),
   loadImage: (name: string) => ipcRenderer.invoke("image:load", name),
   deleteImage: (name: string) => ipcRenderer.invoke("image:delete", name),
   aiRequest: (payload: { url: string; method?: string; headers?: Record<string, string>; body?: string }) =>

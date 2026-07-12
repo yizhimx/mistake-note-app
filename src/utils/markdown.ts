@@ -6,15 +6,27 @@ import { getCachedImage, preloadFromMarkdown } from '@/services/imageStore';
 const PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 function renderKatex(text: string): string {
-  return text
-    .replace(/\$\$([\s\S]*?)\$\$/g, (_m: string, math: string) => {
-      try { return katex.renderToString(math.trim(), { displayMode: true, throwOnError: false }); }
-      catch { return `<div class="katex-error">${math.trim()}</div>`; }
-    })
-    .replace(/\$([^$\n]+?)\$/g, (_m: string, math: string) => {
-      try { return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false }); }
-      catch { return `<span class="katex-error">${math.trim()}</span>`; }
-    });
+  // Handle \(...\) inline math (common in AI/OCR output)
+  let result = text.replace(/\\\(([\s\S]*?)\\\)/g, (_m: string, math: string) => {
+    try { return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false }); }
+    catch { return `<span class="katex-error">\\(${math.trim()}\\)</span>`; }
+  });
+  // Handle \[...\] display math (common in AI/OCR output)
+  result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_m: string, math: string) => {
+    try { return katex.renderToString(math.trim(), { displayMode: true, throwOnError: false }); }
+    catch { return `<div class="katex-error">\\[${math.trim()}\\]</div>`; }
+  });
+  // Handle $$...$$ display math
+  result = result.replace(/\$\$([\s\S]*?)\$\$/g, (_m: string, math: string) => {
+    try { return katex.renderToString(math.trim(), { displayMode: true, throwOnError: false }); }
+    catch { return `<div class="katex-error">${math.trim()}</div>`; }
+  });
+  // Handle $...$ inline math
+  result = result.replace(/\$([^$\n]+?)\$/g, (_m: string, math: string) => {
+    try { return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false }); }
+    catch { return `<span class="katex-error">${math.trim()}</span>`; }
+  });
+  return result;
 }
 
 function resolveImages(text: string): string {

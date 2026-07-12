@@ -37,6 +37,7 @@ export interface MistakeRecord {
   sm2Data: string | null;
   linkedNoteIds: string[];
   synced: boolean;
+  isDeleted?: boolean;
 }
 
 export const useMistakeStore = defineStore('mistake', {

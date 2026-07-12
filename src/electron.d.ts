@@ -8,6 +8,7 @@ declare global {
       getDbPath: () => Promise<string>;
       exportPdf?: (html: string) => Promise<boolean>;
       saveImage: (dataUrl: string) => Promise<string | null>;
+      saveImageAs: (dataUrl: string, name: string) => Promise<string | null>;
       loadImage: (name: string) => Promise<string | null>;
       deleteImage: (name: string) => Promise<void>;
       aiRequest: (payload: {

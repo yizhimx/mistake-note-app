@@ -8,6 +8,7 @@
         <q-btn flat dense no-caps icon="select_all" :label="allSelected ? '取消全选' : '全选'" color="grey" @click="toggleSelectAll" />
         <q-btn v-if="selectedIds.length > 0" flat dense icon="file_download" color="primary" :label="`导出所选 (${selectedIds.length})`" @click="exportSelected" no-caps unelevated />
         <q-btn v-if="selectedIds.length > 0" flat dense icon="auto_awesome" color="secondary" :label="`批量识别 (${selectedIds.length})`" @click="batchRecognitionSelected" no-caps unelevated :loading="batchQueuing" :disable="batchQueuing" />
+        <q-btn v-if="selectedIds.length > 0" flat dense icon="delete" color="negative" :label="`删除所选 (${selectedIds.length})`" @click="batchDeleteMistakes" no-caps unelevated />
         <q-btn flat dense no-caps icon="filter_list" label="筛选" @click="showFilter = !showFilter" :color="hasActiveFilters ? 'primary' : 'grey'" />
         <q-btn v-if="hasActiveFilters" flat dense no-caps icon="clear" label="重置" color="grey" @click="clearFilters" />
         <q-btn color="secondary" no-caps unelevated icon="auto_awesome" label="批量导入" @click="showBatchImport = true" class="q-mr-sm" />
@@ -332,6 +333,27 @@ function deleteMistake(id: string) {
   }).onOk(async () => {
     await mistakeStore.removeMistake(id);
     $q.notify({ type: 'positive', message: '已删除', timeout: 1500 });
+  });
+}
+
+async function batchDeleteMistakes() {
+  const ids = [...selectedIds.value];
+  $q.dialog({
+    title: '确认批量删除',
+    message: `确定要删除 ${ids.length} 道错题吗？此操作不可恢复。`,
+    cancel: true,
+    persistent: true,
+  }).onOk(async () => {
+    try {
+      for (const id of ids) {
+        await mistakeStore.removeMistake(id);
+      }
+      selectedIds.value = [];
+      await mistakeStore.fetchAll();
+      $q.notify({ type: 'positive', message: `已删除 ${ids.length} 道错题`, timeout: 2000 });
+    } catch (e: any) {
+      $q.notify({ type: 'negative', message: `删除失败：${e?.message || String(e)}`, timeout: 3000 });
+    }
   });
 }
 

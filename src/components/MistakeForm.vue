@@ -66,6 +66,8 @@
             <q-btn flat dense size="sm" icon="code" @click="insertMarkdown('`', '`')" />
             <q-btn flat dense size="sm" icon="functions" @click="insertMarkdown('$$', '$$')" />
             <q-btn flat dense size="sm" icon="image" @click="insertImage" />
+            <q-btn flat dense size="sm" icon="camera_alt" title="拍照" @click="takePhotoAndInsert('content')" />
+            <q-btn flat dense size="sm" icon="photo_library" title="相册选取" @click="pickFromGalleryAndInsert('content')" />
             <q-btn flat dense size="sm" icon="crop" @click="cropContentImage" />
             <q-btn flat dense size="sm" icon="content_paste" color="grey" title="粘贴图片 (Ctrl+V)" @click="pasteImageFromClipboard('content')" />
           </div>
@@ -82,6 +84,8 @@
             <q-btn flat dense size="sm" icon="code" @click="insertAnswerMarkdown('`', '`')" />
             <q-btn flat dense size="sm" icon="functions" @click="insertAnswerMarkdown('$$', '$$')" />
             <q-btn flat dense size="sm" icon="image" @click="insertAnswerImage" />
+            <q-btn flat dense size="sm" icon="camera_alt" title="拍照" @click="takePhotoAndInsert('answer')" />
+            <q-btn flat dense size="sm" icon="photo_library" title="相册选取" @click="pickFromGalleryAndInsert('answer')" />
             <q-btn flat dense size="sm" icon="crop" @click="cropAnswerImage" />
             <q-btn flat dense size="sm" icon="content_paste" color="grey" title="粘贴图片 (Ctrl+V)" @click="pasteImageFromClipboard('answer')" />
           </div>
@@ -153,6 +157,7 @@ const form = reactive({
   sourcePaperType: null as string | null,
   sourcePaperName: '',
   questionNumber: '',
+  aiAnalysis: null as string | null,
 });
 
 const subjects = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
@@ -325,6 +330,32 @@ async function pasteImageFromClipboard(target: 'content' | 'answer') {
   }
 }
 
+async function takePhotoAndInsert(target: 'content' | 'answer') {
+  try {
+    const { takePhoto } = await import('@/utils/camera');
+    const result = await takePhoto();
+    if (result) {
+      const ref = await compressAndSaveImage(result.file);
+      insertImageRef(ref, target);
+    }
+  } catch {
+    $q.notify({ type: 'negative', message: '拍照失败', timeout: 1500 });
+  }
+}
+
+async function pickFromGalleryAndInsert(target: 'content' | 'answer') {
+  try {
+    const { pickFromGallery } = await import('@/utils/camera');
+    const result = await pickFromGallery();
+    if (result) {
+      const ref = await compressAndSaveImage(result.file);
+      insertImageRef(ref, target);
+    }
+  } catch {
+    $q.notify({ type: 'negative', message: '选取图片失败', timeout: 1500 });
+  }
+}
+
 async function cropContentImage() {
   const refs = extractImageRefs(form.content);
   if (refs.length === 0) {
@@ -474,26 +505,47 @@ async function runAiAnalysis() {
   }
   try {
     const loading = $q.loading.show({ message: 'AI 解析中...' });
-    const prompt = `请分析以下题目，返回完整解析。格式要求：
-使用 Markdown 格式，包含以下内容（用中文）：
+    const prompt = `你是一位严谨的学科教师，请解析以下错题。返回格式：
 
 ## 正确答案
-（给出最终答案）
+（用 Markdown 写出正确答案）
 
 ## 解题步骤
 （分步骤详细说明解题过程）
 
-## 知识点
-（列出本题涉及的知识点）
-
-## 常见错误
-（列出学生容易犯的错误）
-
-题目：${form.content}`;
-    const content = await directTextChat(prompt, { temperature: 0.3 });
+题目内容：
+${form.content}`;
+    const content = await directTextChat(prompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。' });
     loading();
-    form.answer = form.answer ? form.answer + '\n\n---\n\n' + content : content;
-    $q.notify({ type: 'positive', message: 'AI 解析完成，已填入答案框', timeout: 2000 });
+    form.aiAnalysis = (content || '').trim();
+
+    if (!form.answer.trim()) {
+      form.answer = form.aiAnalysis;
+    } else {
+      const ok = await new Promise<'overwrite' | 'append' | null>(resolve => {
+        $q.dialog({
+          title: '答案已存在',
+          message: '当前答案框已有内容，请选择处理方式：',
+          options: {
+            type: 'radio',
+            model: 'append' as string,
+            items: [
+              { label: '覆盖现有答案', value: 'overwrite' },
+              { label: '追加到末尾', value: 'append' },
+            ],
+          },
+          cancel: true,
+        }).onOk((val: string) => resolve(val as 'overwrite' | 'append'))
+          .onCancel(() => resolve(null));
+      });
+      if (ok === 'overwrite') {
+        form.answer = form.aiAnalysis;
+      } else if (ok === 'append') {
+        form.answer = form.answer.trimEnd() + '\n\n---\n\n' + form.aiAnalysis;
+      }
+    }
+
+    $q.notify({ type: 'positive', message: 'AI 解析完成', timeout: 2000 });
   } catch (e: any) {
     $q.notify({ type: 'negative', message: `AI 解析失败：${e?.message || String(e)}`, timeout: 3000 });
   }
@@ -559,6 +611,7 @@ async function saveForm() {
       sourcePaperType: form.sourcePaperType || '',
       sourcePaperName: form.sourcePaperName,
       questionNumber: form.questionNumber,
+      aiAnalysis: form.aiAnalysis || null,
     };
     emit('save', data);
   } catch (e: any) {

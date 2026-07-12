@@ -36,6 +36,7 @@ function toDb(row: any): MistakeRecord {
     sm2Data: row.sm2_data || null,
     linkedNoteIds: JSON.parse(row.linked_note_ids || '[]'),
     synced: row.synced === 1,
+    isDeleted: row.deleted === 1,
   };
 }
 
@@ -71,12 +72,13 @@ function toDbRow(r: MistakeRecord) {
     safe(r.sm2Data || null),
     safe(JSON.stringify(r.linkedNoteIds)),
     safe(r.synced ? 1 : 0),
+    safe(r.isDeleted ? 1 : 0),
   ];
 }
 
 export async function fetchMistakes(): Promise<MistakeRecord[]> {
   const db = await getDb();
-  const rows = await db.all('SELECT * FROM mistakes ORDER BY created_at DESC');
+  const rows = await db.all('SELECT * FROM mistakes WHERE deleted = 0 ORDER BY created_at DESC');
   return rows.map(toDb);
 }
 
@@ -92,7 +94,7 @@ const INSERT_COLS = [
   'year', 'knowledge_areas', 'source_paper_type', 'source_paper_name', 'question_number',
   'ai_analysis', 'ocr_text', 'created_at', 'updated_at',
   'review_count', 'last_review_at', 'mastery_level', 'sm2_data',
-  'linked_note_ids', 'synced',
+  'linked_note_ids', 'synced', 'deleted',
 ];
 const PLACEHOLDERS = INSERT_COLS.map(() => '?').join(', ');
 
@@ -107,7 +109,7 @@ export async function addMistake(r: MistakeRecord): Promise<void> {
     `INSERT INTO mistakes (${INSERT_COLS.join(', ')}) VALUES (${PLACEHOLDERS})`,
     values,
   );
-  await saveDb();
+  saveDb();
 }
 
 function escapeSql(v: any): string {
@@ -133,7 +135,7 @@ export async function addMistakes(records: MistakeRecord[]): Promise<void> {
   }
   statements.push('COMMIT');
   await db.exec(statements.join('; '));
-  await saveDb();
+  saveDb();
 }
 
 const UPDATE_COLS = [
@@ -142,7 +144,7 @@ const UPDATE_COLS = [
   'year', 'knowledge_areas', 'source_paper_type', 'source_paper_name', 'question_number',
   'ai_analysis', 'ocr_text', 'updated_at',
   'review_count', 'last_review_at', 'mastery_level', 'sm2_data',
-  'linked_note_ids', 'synced',
+  'linked_note_ids', 'synced', 'deleted',
 ];
 
 export async function updateMistake(id: string, data: Partial<MistakeRecord>): Promise<void> {
@@ -178,16 +180,18 @@ export async function updateMistake(id: string, data: Partial<MistakeRecord>): P
       safe(merged.sm2Data || null),
       safe(JSON.stringify(merged.linkedNoteIds)),
       safe(merged.synced ? 1 : 0),
+      safe(merged.isDeleted ? 1 : 0),
       safe(id),
     ],
   );
-  await saveDb();
+  saveDb();
 }
 
 export async function deleteMistake(id: string): Promise<void> {
   const db = await getDb();
-  await db.run('DELETE FROM mistakes WHERE id = ?', [id]);
-  await saveDb();
+  const now = new Date().toISOString();
+  await db.run('UPDATE mistakes SET deleted = 1, synced = 0, updated_at = ? WHERE id = ?', [now, id]);
+  saveDb();
 }
 
 export async function searchMistakes(params: {
@@ -216,7 +220,9 @@ export async function searchMistakes(params: {
     values.push(params.dateTo);
   }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const where = conditions.length > 0
+    ? `WHERE ${conditions.join(' AND ')} AND deleted = 0`
+    : 'WHERE deleted = 0';
   const db = await getDb();
   const rows = await db.all(`SELECT * FROM mistakes ${where} ORDER BY created_at DESC`, values);
   return rows.map(toDb);

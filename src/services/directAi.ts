@@ -1,4 +1,5 @@
-import { getAiConfig } from './aiConfig';
+import { getAiConfig as _getAiConfig } from './aiConfig';
+export const getAiConfig = _getAiConfig;
 
 function normalizeUrl(endpoint?: string): string {
   const base = (endpoint || 'https://dashscope.aliyuncs.com/compatible-mode/v1').replace(/\/+$/, '');
