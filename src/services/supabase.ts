@@ -6,10 +6,11 @@ let currentUser: User | null = null;
 /** Direct fetch for Supabase (no IPC proxy — Chromium network stack works, Node.js doesn't). */
 async function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const rawInput = (typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url);
-  // Fix: supabase-js v2.110.2 sometimes inserts /rest/v1 into auth or REST URLs
+  // Fix: supabase-js v2.110.2 URL construction bugs — inserts /rest/v1 into auth, REST, or Storage URLs
   const url = rawInput
     .replaceAll('/rest/v1/auth/v1/', '/auth/v1/')
-    .replaceAll('/rest/v1/rest/v1/', '/rest/v1/');
+    .replaceAll('/rest/v1/rest/v1/', '/rest/v1/')
+    .replaceAll('/rest/v1/storage/v1/', '/storage/v1/');
   console.log('[supabaseFetch] URL:', url, 'method:', init?.method);
   if (typeof init?.body === 'string') {
     console.log('[supabaseFetch] BODY:', init.body.substring(0, 1000));

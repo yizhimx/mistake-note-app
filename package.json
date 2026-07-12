@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@capacitor/camera": "^8.2.1",
+    "@capacitor/filesystem": "^7.0.0",
     "@quasar/extras": "^2.0.0",
     "@supabase/supabase-js": "^2.110.2",
     "comlink": "^4.4.2",

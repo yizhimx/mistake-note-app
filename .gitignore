@@ -19,6 +19,7 @@ node_modules
 # Capacitor related directories and files
 /src-capacitor/www
 /src-capacitor/node_modules
+/src-capacitor/android
 
 # Electron local zip cache used by @electron/packager
 /src-electron/electron-zip

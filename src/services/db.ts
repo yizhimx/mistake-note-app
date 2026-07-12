@@ -1,4 +1,5 @@
 import { wrap, Remote } from 'comlink';
+import { readMobileDb, writeMobileDb } from './mobileFs';
 
 const LS_KEY = 'mistake_note_db';
 
@@ -35,6 +36,11 @@ function base64ToUint8Array(base64: string): Uint8Array {
 }
 
 async function loadDbFromDisk(): Promise<Uint8Array | undefined> {
+  // Try Capacitor Filesystem first (mobile)
+  const mobileDb = await readMobileDb();
+  if (mobileDb) return mobileDb;
+
+  // Try Electron IPC (desktop)
   if (window.electronAPI) {
     try {
       const data = await window.electronAPI.readDbFile();
@@ -43,6 +49,7 @@ async function loadDbFromDisk(): Promise<Uint8Array | undefined> {
       // electronAPI present but read failed
     }
   }
+  // Fallback to localStorage
   const ls = localStorage.getItem(LS_KEY);
   if (ls) {
     try {
@@ -63,7 +70,10 @@ async function saveDbToDisk(data: Uint8Array): Promise<boolean> {
     console.warn('localStorage save failed:', e);
   }
 
-  // Also save via Electron IPC if available
+  // Try Capacitor Filesystem (mobile) — happens after localStorage to avoid double-save issue
+  const mobileWrote = await writeMobileDb(data);
+
+  // Also save via Electron IPC if available (desktop)
   if (window.electronAPI) {
     try {
       await window.electronAPI.writeDbFile(data);
@@ -73,7 +83,7 @@ async function saveDbToDisk(data: Uint8Array): Promise<boolean> {
       return false;
     }
   }
-  return false;
+  return mobileWrote;
 }
 
 export async function getDb(): Promise<Remote<IDBWorker>> {

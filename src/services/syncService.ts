@@ -70,10 +70,11 @@ async function pushUnsynced(supabase: SupabaseClient) {
   if (mistakes.length > 0) {
     const { error } = await supabase.from('mistakes').upsert(mistakes.map(mistakeRowToSupabase), { onConflict: 'id' });
     if (!error) {
-      await db.run('UPDATE mistakes SET synced = 1 WHERE synced = 0');
+      // Upload images BEFORE marking synced — if upload fails, record stays unsynced for retry
       if (user) {
         for (const row of mistakes) await uploadLocalImagesForRecord(supabase, row, user.id);
       }
+      await db.run('UPDATE mistakes SET synced = 1 WHERE synced = 0');
     }
   }
 
@@ -81,11 +82,23 @@ async function pushUnsynced(supabase: SupabaseClient) {
   if (notes.length > 0) {
     const { error } = await supabase.from('notes').upsert(notes.map(noteRowToSupabase), { onConflict: 'id' });
     if (!error) {
-      await db.run('UPDATE notes SET synced = 1 WHERE synced = 0');
       if (user) {
         for (const row of notes) await uploadLocalImagesForRecord(supabase, row, user.id);
       }
+      await db.run('UPDATE notes SET synced = 1 WHERE synced = 0');
     }
+  }
+
+  // Safety net: retry previously-failed image uploads for ANY record with local: refs
+  if (user) {
+    const mistakenRows = await db.all(
+      `SELECT * FROM mistakes WHERE content LIKE '%local:%' OR answer LIKE '%local:%' OR image_urls LIKE '%local:%' OR answer_images LIKE '%local:%'`
+    );
+    for (const row of mistakenRows) await uploadLocalImagesForRecord(supabase, row, user.id);
+    const noteRows = await db.all(
+      `SELECT * FROM notes WHERE content LIKE '%local:%' OR image_urls LIKE '%local:%'`
+    );
+    for (const row of noteRows) await uploadLocalImagesForRecord(supabase, row, user.id);
   }
 }
 
@@ -280,15 +293,21 @@ async function uploadLocalImagesForRecord(supabase: SupabaseClient, row: any, us
     const existing = await db.get('SELECT 1 FROM uploaded_images WHERE id = ? AND user_id = ?', [ref, userId]);
     if (existing) continue;
     const dataUrl = await loadImage(ref);
-    if (!dataUrl) continue;
+    if (!dataUrl) { console.warn('[sync] upload: loadImage failed for', ref); continue; }
     const filename = ref.replace('local:', '');
+    const uploadPath = `${userId}/${filename}`;
+    console.log('[sync] uploadLocalImagesForRecord:', ref, '→', uploadPath, 'dataUrl length:', dataUrl.length);
     const blob = dataUrlToBlob(dataUrl);
-    const { error } = await supabase.storage.from('images').upload(`${userId}/${filename}`, blob, {
+    console.log('[sync] uploading to storage:', uploadPath, 'blob:', blob.type, blob.size);
+    const { error } = await supabase.storage.from('images').upload(uploadPath, blob, {
       contentType: blob.type || 'image/jpeg',
       upsert: true,
     });
     if (!error) {
+      console.log('[sync] upload OK:', uploadPath);
       await db.run('INSERT OR IGNORE INTO uploaded_images (id, user_id) VALUES (?, ?)', [ref, userId]);
+    } else {
+      console.warn(`[sync] upload image failed ${ref} (path=${uploadPath}):`, error.message || error);
     }
   }
 }
@@ -300,8 +319,14 @@ async function downloadMissingImagesForRecord(supabase: SupabaseClient, row: any
     const existing = await loadImage(ref);
     if (existing) continue;
     const filename = ref.replace('local:', '');
-    const { data, error } = await supabase.storage.from('images').download(`${userId}/${filename}`);
-    if (error || !data) continue;
+    const downloadPath = `${userId}/${filename}`;
+    console.log('[sync] download attempt:', downloadPath, 'for ref:', ref);
+    const { data, error } = await supabase.storage.from('images').download(downloadPath);
+    if (error || !data) {
+      if (error) console.warn(`[sync] download image FAILED ${ref} (path=${downloadPath}, user=${userId}):`, error.message || error);
+      continue;
+    }
+    console.log('[sync] download OK:', downloadPath);
     const dataUrl = await blobToFileReader(data);
     if (dataUrl) {
       await saveImageData(ref, dataUrl);

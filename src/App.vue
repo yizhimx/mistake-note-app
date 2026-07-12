@@ -8,6 +8,7 @@ import { onMounted } from 'vue';
 import { initSupabaseFromStorage, restoreSession } from '@/services/supabase';
 import { startSync } from '@/services/syncService';
 import { getDb } from '@/services/db';
+import { initMobileFs } from '@/services/mobileFs';
 
 const $q = useQuasar();
 
@@ -16,6 +17,8 @@ onMounted(async () => {
   if (saved !== null) {
     $q.dark.set(saved as boolean);
   }
+
+  initMobileFs(); // Initialize Capacitor Filesystem (no-op on non-mobile)
 
   initSupabaseFromStorage();
   restoreSession(); // fire-and-forget: session not needed for startup
