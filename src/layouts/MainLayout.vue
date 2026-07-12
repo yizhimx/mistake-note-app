@@ -11,6 +11,10 @@
         <q-btn flat round dense :icon="isDark ? 'dark_mode' : 'light_mode'" @click="toggleDarkMode">
           <q-tooltip>{{ isDark ? '切换亮色模式' : '切换暗色模式' }}</q-tooltip>
         </q-btn>
+
+        <q-btn flat round dense :icon="syncIcon" :color="syncColor" @click="handleSyncClick">
+          <q-tooltip>{{ syncTooltip }}</q-tooltip>
+        </q-btn>
       </q-toolbar>
     </q-header>
 
@@ -101,6 +105,9 @@ import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter, useRoute } from 'vue-router';
 import { useQueueStore } from '@/stores/queueStore';
+import { useSyncStore } from '@/stores/syncStore';
+import { triggerSync } from '@/services/syncService';
+import { getSupabaseClient } from '@/services/supabase';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -109,6 +116,7 @@ const route = useRoute();
 const leftDrawerOpen = ref(false);
 const currentTab = ref('mistake-list');
 const showAddActions = ref(false);
+const syncStore = useSyncStore();
 
 const isDark = computed(() => $q.dark.isActive);
 
@@ -119,6 +127,56 @@ function toggleDarkMode() {
 
 function toggleLeftDrawer() {
   leftDrawerOpen.value = !leftDrawerOpen.value;
+}
+
+const syncIcon = computed(() => {
+  if (!syncStore.isOnline) return 'cloud_off';
+  if (syncStore.syncState === 'syncing') return 'sync';
+  if (syncStore.syncState === 'error') return 'sync_problem';
+  if (syncStore.lastSyncAt) return 'cloud_done';
+  return 'cloud_queue';
+});
+
+const syncColor = computed(() => {
+  if (!syncStore.isOnline) return 'grey';
+  if (syncStore.syncState === 'syncing') return 'amber';
+  if (syncStore.syncState === 'error') return 'negative';
+  return 'positive';
+});
+
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins}分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}小时前`;
+  return `${Math.floor(hours / 24)}天前`;
+}
+
+const syncTooltip = computed(() => {
+  const parts: string[] = [];
+  if (syncStore.userEmail) parts.push(syncStore.userEmail);
+  if (!syncStore.isOnline) {
+    parts.push('离线');
+  } else if (syncStore.syncState === 'syncing') {
+    parts.push('同步中...');
+  } else if (syncStore.syncState === 'error') {
+    parts.push('同步失败');
+    if (syncStore.lastError) parts.push(syncStore.lastError);
+  } else if (syncStore.lastSyncAt) {
+    parts.push(`上次同步：${formatRelativeTime(syncStore.lastSyncAt)}`);
+  } else {
+    parts.push('尚未同步');
+  }
+  return parts.join(' · ');
+});
+
+function handleSyncClick() {
+  if (syncStore.syncState === 'syncing') return;
+  if (!syncStore.isOnline) return;
+  if (!getSupabaseClient()) { router.push({ name: 'settings' }); return; }
+  triggerSync();
 }
 
 onMounted(() => {

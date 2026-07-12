@@ -32,21 +32,29 @@ function handleOffline() {
   useSyncStore().setOnline(false);
 }
 
+export function triggerSync() { doSync(); }
+
 async function doSync() {
   const store = useSyncStore();
   if (!store.isOnline) return;
+  if (store.syncState === 'syncing') return;
+  store.syncState = 'syncing';
 
   const supabase = getSupabaseClient();
-  if (!supabase) return;
+  if (!supabase) { store.syncState = 'error'; return; }
   const user = getCurrentUser();
-  if (!user) return;
+  if (!user) { store.syncState = 'idle'; return; }
+  store.userEmail = user.email ?? null;
 
   try {
     await pushUnsynced(supabase);
     await pullRemote(supabase, store.lastSyncAt);
     store.setLastSyncAt(new Date().toISOString());
+    store.syncState = 'synced';
   } catch (e) {
-    console.warn('Sync failed, will retry:', e);
+    console.warn('Sync failed:', e);
+    store.syncState = 'error';
+    store.lastError = String(e);
   } finally {
     saveDb();
   }

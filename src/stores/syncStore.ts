@@ -6,6 +6,9 @@ export const useSyncStore = defineStore('sync', {
   state: () => ({
     isOnline: navigator.onLine,
     lastSyncAt: (localStorage.getItem(LS_KEY) || null) as string | null,
+    syncState: 'idle' as 'idle' | 'syncing' | 'synced' | 'error',
+    userEmail: null as string | null,
+    lastError: null as string | null,
   }),
 
   actions: {

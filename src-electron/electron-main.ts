@@ -1,4 +1,4 @@
-import { BrowserWindow, app, ipcMain, dialog, net } from "electron";
+import { BrowserWindow, app, ipcMain, dialog } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -113,11 +113,20 @@ async function registerIpcHandlers() {
       throw new Error("仅允许 HTTPS 端点");
     }
     try {
-      const resp = await net.fetch(url, { method, headers, body });
-      const text = await resp.text();
-      return { ok: resp.ok, status: resp.status, statusText: resp.statusText, body: text };
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      try {
+        const resp = await fetch(url, { method, headers, body, signal: controller.signal });
+        const text = await resp.text();
+        console.log('[ai:request] response:', url, resp.status, text.slice(0,100));
+        return { ok: resp.ok, status: resp.status, statusText: resp.statusText, body: text };
+      } finally {
+        clearTimeout(timeout);
+      }
     } catch (err: any) {
-      throw new Error(`网络错误：${err?.message || String(err)}`);
+      const msg = `网络错误：${err?.cause ? `${err.cause} – ` : ''}${err?.message || String(err)}`;
+      console.error('[ai:request] failed:', url, msg);
+      throw new Error(msg);
     }
   });
 }
