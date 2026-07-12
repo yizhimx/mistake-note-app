@@ -3,38 +3,23 @@ import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 let client: SupabaseClient | null = null;
 let currentUser: User | null = null;
 
-/** Custom fetch that routes through Electron IPC proxy when available (bypass CORS). */
+/** Direct fetch for Supabase (no IPC proxy — Chromium network stack works, Node.js doesn't). */
 async function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const rawInput = (typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url);
-  // Fix: supabase-js v2.110.2 sometimes inserts /rest/v1 into auth URLs
-  // e.g., "/rest/v1/auth/v1/signup" → "/auth/v1/signup"
-  const url = rawInput.replaceAll('/rest/v1/auth/v1/', '/auth/v1/');
-  console.log('[supabaseFetch] RAW URL:', rawInput, '→ FIXED URL:', rawInput !== url ? url : '(unchanged)');
-  if (window.electronAPI?.aiRequest) {
-    try {
-      const payload: { url: string; method?: string; headers?: Record<string, string>; body?: string } = {
-        url,
-        method: init?.method ?? 'GET',
-        headers: (init?.headers as Record<string, string>) ?? {},
-      };
-      if (typeof init?.body === 'string') payload.body = init.body;
-      const res = await window.electronAPI.aiRequest(payload);
-      return new Response(res.body, { status: res.status, statusText: res.statusText });
-    } catch (err: any) {
-      console.error('[supabase] IPC proxy failed, falling back to direct fetch:', url, err?.message || err);
-    }
+  // Fix: supabase-js v2.110.2 sometimes inserts /rest/v1 into auth or REST URLs
+  const url = rawInput
+    .replaceAll('/rest/v1/auth/v1/', '/auth/v1/')
+    .replaceAll('/rest/v1/rest/v1/', '/rest/v1/');
+  console.log('[supabaseFetch] URL:', url, 'method:', init?.method);
+  if (typeof init?.body === 'string') {
+    console.log('[supabaseFetch] BODY:', init.body.substring(0, 1000));
   }
-  console.warn('[supabase] fallback fetch to:', url);
-  try {
-    const method = init?.method ?? 'GET';
-    const headers = (init?.headers as Record<string, string>) ?? {};
-    const body = typeof init?.body === 'string' ? init.body : undefined;
-    const initOpts: RequestInit = { method, headers };
-    if (body !== undefined) initOpts.body = body;
-    return await fetch(url, initOpts);
-  } catch (e: any) {
-    throw new Error(`Failed to fetch Supabase (${url}): ${e?.message || e}`);
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    const body = await response.clone().text();
+    console.error('[supabaseFetch] ERROR:', response.status, body.substring(0, 500));
   }
+  return response;
 }
 
 export function getSupabaseClient(): SupabaseClient | null {

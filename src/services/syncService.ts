@@ -146,7 +146,7 @@ function mistakeRowToSupabase(row: any) {
     last_review_at: row.last_review_at || null,
     mastery_level: row.mastery_level || null,
     sm2_data: row.sm2_data ? safeJsonParse(row.sm2_data, null) : null,
-    deleted: row.deleted === 1,
+    deleted: row.deleted === 1 ? 1 : 0,
   };
 }
 
@@ -169,7 +169,7 @@ function noteRowToSupabase(row: any) {
     linked_mistake_ids: safeJsonParse(row.linked_mistake_ids, []),
     created_at: row.created_at,
     updated_at: row.updated_at,
-    deleted: row.deleted === 1,
+    deleted: row.deleted === 1 ? 1 : 0,
   };
 }
 
