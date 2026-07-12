@@ -54,13 +54,24 @@
         </q-item-section>
 
         <!-- Expanded detail -->
-        <template v-if="expandedId === item.id && item.status === 'completed' && item.resultContent">
+        <template v-if="expandedId === item.id && item.status === 'completed'">
           <q-item-section>
             <q-separator class="q-my-sm" />
-            <div class="markdown-preview bg-grey-1 q-pa-sm rounded-borders" style="max-height: 300px; overflow-y: auto; font-size: 13px;" v-html="renderMd(item.resultContent || '')" />
-            <div class="q-mt-xs q-gutter-xs">
-              <q-chip v-if="item.resultDifficulty" size="sm" icon="star" color="orange">{{ item.resultDifficulty }} 星</q-chip>
-              <q-chip v-for="kp in item.resultKnowledgePoints" :key="kp" size="sm" color="primary">{{ kp }}</q-chip>
+            <div
+              v-for="(q, qi) in (item.resultQuestions && item.resultQuestions.length ? item.resultQuestions : [singleResult(item)])"
+              :key="qi"
+              class="q-mb-md"
+            >
+              <div class="text-caption text-grey q-mb-xs" v-if="(item.resultQuestions?.length || 0) > 1">第 {{ qi + 1 }} 题</div>
+              <div class="markdown-preview bg-grey-1 q-pa-sm rounded-borders" style="max-height: 200px; overflow-y: auto; font-size: 13px;" v-html="renderMd(q.content || '')" />
+              <div class="q-mt-xs q-gutter-xs">
+                <q-chip v-if="q.difficulty" size="sm" icon="star" color="orange">{{ q.difficulty }} 星</q-chip>
+                <q-chip v-if="q.subject" size="sm" color="teal">{{ q.subject }}</q-chip>
+                <q-chip v-for="kp in q.knowledgeAreas" :key="kp" size="sm" color="primary">{{ kp }}</q-chip>
+              </div>
+            </div>
+            <div v-if="(item.resultQuestions?.length || 0) > 1" class="text-caption text-grey q-mt-xs">
+              共 {{ item.resultQuestions!.length }} 道题，点击「应用」将一次性创建。
             </div>
           </q-item-section>
         </template>
@@ -143,49 +154,81 @@ function renderMd(text: string): string {
   return renderMarkdown(text);
 }
 
+function singleResult(item: AiQueueItem) {
+  return {
+    content: item.resultContent || '',
+    subject: item.resultSubject || '',
+    difficulty: item.resultDifficulty || 0,
+    knowledgeAreas: item.resultKnowledgeAreas || [],
+  };
+}
+
 async function applyResult(item: AiQueueItem) {
-  if (!item.resultContent) return;
+  const questions =
+    item.resultQuestions && item.resultQuestions.length
+      ? item.resultQuestions
+      : [singleResult(item)];
+  if (!questions.length || !questions[0].content) return;
   try {
     const now = new Date().toISOString();
-    const id = uid();
-    const record = {
-      id,
-      title: (item.resultContent || '').split('\n')[0]?.replace(/[#*`$]/g, '').trim().slice(0, 30) || `错题 ${now.slice(0, 10)}`,
-      content: item.resultContent,
-      imageUrls: [],
-      tags: [],
-      subject: '',
-      answer: '',
-      answerImages: [],
-      difficulty: item.resultDifficulty || 0,
-      knowledgePoints: item.resultKnowledgePoints,
-      year: '',
-      knowledgeAreas: [],
-      sourcePaperType: '',
-      sourcePaperName: '',
-      questionNumber: '',
-      notes: '',
-      aiAnalysis: null,
-      ocrText: null,
-      createdAt: now,
-      updatedAt: now,
-      reviewCount: 0,
-      lastReviewAt: null,
-      masteryLevel: null,
-      sm2Data: null,
-      linkedNoteIds: [],
-      synced: false,
-    };
-    await addMistake(record as any);
+    // Save the original (pre-recognition) image once and reference it in each generated mistake
+    let imageRef = '';
+    if (item.imageData) {
+      try {
+        if (item.imageData.startsWith('local:')) {
+          imageRef = `![原始图片](${item.imageData})`;
+        } else {
+          const { saveImage } = await import('@/services/imageStore');
+          const ref = await saveImage(item.imageData);
+          imageRef = `![原始图片](${ref})`;
+        }
+      } catch {
+        // ignore image save failure, still create the mistake
+      }
+    }
+    const created: string[] = [];
+    for (const q of questions) {
+      const id = uid();
+      const record = {
+        id,
+        title: (q.content || '').split('\n')[0]?.replace(/[#*`$]/g, '').trim().slice(0, 30) || `错题 ${now.slice(0, 10)}`,
+        content: q.content + (imageRef ? `\n\n${imageRef}` : ''),
+        imageUrls: [],
+        tags: [],
+        subject: q.subject || '',
+        answer: '',
+        answerImages: [],
+        difficulty: q.difficulty || 0,
+        knowledgePoints: [],
+        year: '',
+        knowledgeAreas: q.knowledgeAreas || [],
+        sourcePaperType: '',
+        sourcePaperName: '',
+        questionNumber: '',
+        notes: '',
+        aiAnalysis: null,
+        ocrText: null,
+        createdAt: now,
+        updatedAt: now,
+        reviewCount: 0,
+        lastReviewAt: null,
+        masteryLevel: null,
+        sm2Data: null,
+        linkedNoteIds: [],
+        synced: false,
+      };
+      await addMistake(record as any);
+      created.push(id);
+    }
     await mistakeStore.fetchAll();
     await queue.removeItem(item.id);
     $q.notify({
       type: 'positive',
-      message: '已创建错题',
+      message: `已创建 ${created.length} 道错题`,
       timeout: 2000,
-      actions: [
-        { label: '查看', color: 'white', handler: () => router.push({ name: 'mistake-detail', params: { id } }) },
-      ],
+      actions: created.length
+        ? [{ label: '查看', color: 'white', handler: () => router.push({ name: 'mistake-detail', params: { id: created[0] } }) }]
+        : [],
     });
   } catch (e: any) {
     $q.notify({ type: 'negative', message: `创建错题失败：${e?.message || String(e)}`, timeout: 3000 });

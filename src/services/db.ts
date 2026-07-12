@@ -182,6 +182,8 @@ async function initTables() {
       status TEXT NOT NULL DEFAULT 'pending',
       result_content TEXT,
       result_difficulty TEXT,
+      result_subject TEXT,
+      result_knowledge_areas TEXT,
       result_knowledge_points TEXT,
       error TEXT,
       created_at TEXT NOT NULL,
@@ -210,6 +212,9 @@ async function initTables() {
     'ALTER TABLE notes ADD COLUMN knowledge_points TEXT NOT NULL DEFAULT \'[]\'',
     'ALTER TABLE notes ADD COLUMN tips TEXT NOT NULL DEFAULT \'[]\'',
     'ALTER TABLE notes ADD COLUMN is_folder INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE ai_queue ADD COLUMN result_subject TEXT',
+    'ALTER TABLE ai_queue ADD COLUMN result_knowledge_areas TEXT',
+    'ALTER TABLE ai_queue ADD COLUMN result_questions TEXT',
   ]) {
     try { await dbWorker.exec(col); } catch { /* column may already exist */ }
   }

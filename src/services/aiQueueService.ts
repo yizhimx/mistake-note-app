@@ -1,21 +1,30 @@
 import { getDb, saveDb } from './db';
 
+export interface SplitQuestion {
+  content: string;
+  subject: string;
+  difficulty: number;
+  knowledgeAreas: string[];
+}
+
 export interface AiQueueItem {
   id: string;
   mistakeId: string | null;
   imageData: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'processing' | 'done' | 'error';
   resultContent: string | null;
   resultDifficulty: number | null;
-  resultKnowledgePoints: string[];
+  resultSubject: string | null;
+  resultKnowledgeAreas: string[] | null;
+  resultQuestions: SplitQuestion[] | null;
   error: string | null;
   createdAt: string;
   processedAt: string | null;
 }
 
 function toItem(row: any): AiQueueItem {
-  let kps: string[] = [];
-  try { kps = JSON.parse(row.result_knowledge_points || '[]'); } catch { kps = []; }
+  let areas: string[] = [];
+  try { areas = JSON.parse(row.result_knowledge_areas || '[]'); } catch { areas = []; }
   return {
     id: row.id,
     mistakeId: row.mistake_id || null,
@@ -23,7 +32,9 @@ function toItem(row: any): AiQueueItem {
     status: row.status || 'pending',
     resultContent: row.result_content || null,
     resultDifficulty: row.result_difficulty ? parseInt(row.result_difficulty, 10) : null,
-    resultKnowledgePoints: kps,
+    resultSubject: row.result_subject || null,
+    resultKnowledgeAreas: areas,
+    resultQuestions: row.result_questions ? JSON.parse(row.result_questions) : null,
     error: row.error || null,
     createdAt: row.created_at,
     processedAt: row.processed_at || null,
@@ -49,8 +60,8 @@ export async function fetchQueueItem(id: string): Promise<AiQueueItem | null> {
 export async function addQueueItem(item: AiQueueItem): Promise<void> {
   const db = await getDb();
   await db.run(
-    `INSERT INTO ai_queue (id, mistake_id, image_data, status, result_content, result_difficulty, result_knowledge_points, error, created_at, processed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ai_queue (id, mistake_id, image_data, status, result_content, result_difficulty, result_subject, result_knowledge_areas, result_questions, error, created_at, processed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       safe(item.id),
       safe(item.mistakeId),
@@ -58,7 +69,9 @@ export async function addQueueItem(item: AiQueueItem): Promise<void> {
       safe(item.status),
       safe(item.resultContent),
       safe(item.resultDifficulty !== null ? String(item.resultDifficulty) : null),
-      safe(JSON.stringify(item.resultKnowledgePoints)),
+      safe(item.resultSubject),
+      safe(JSON.stringify(item.resultKnowledgeAreas)),
+      safe(JSON.stringify(item.resultQuestions)),
       safe(item.error),
       safe(item.createdAt),
       safe(item.processedAt),
@@ -74,7 +87,9 @@ export async function updateQueueItem(id: string, data: Partial<AiQueueItem>): P
   if (data.status !== undefined) { fields.push('status=?'); values.push(data.status); }
   if (data.resultContent !== undefined) { fields.push('result_content=?'); values.push(data.resultContent); }
   if (data.resultDifficulty !== undefined) { fields.push('result_difficulty=?'); values.push(String(data.resultDifficulty)); }
-  if (data.resultKnowledgePoints !== undefined) { fields.push('result_knowledge_points=?'); values.push(JSON.stringify(data.resultKnowledgePoints)); }
+  if (data.resultSubject !== undefined) { fields.push('result_subject=?'); values.push(data.resultSubject); }
+  if (data.resultKnowledgeAreas !== undefined) { fields.push('result_knowledge_areas=?'); values.push(JSON.stringify(data.resultKnowledgeAreas)); }
+  if (data.resultQuestions !== undefined) { fields.push('result_questions=?'); values.push(JSON.stringify(data.resultQuestions)); }
   if (data.error !== undefined) { fields.push('error=?'); values.push(data.error); }
   if (data.processedAt !== undefined) { fields.push('processed_at=?'); values.push(data.processedAt); }
 

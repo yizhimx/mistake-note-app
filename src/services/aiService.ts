@@ -78,29 +78,33 @@ export interface RecognizeResult {
   content: string;
   /** 难度星级 1-5 */
   difficulty: number;
-  /** 自动生成的知识点标签 */
-  knowledgePoints: string[];
+  /** 识别出的科目 */
+  subject: string;
+  /** 自动生成的知识板块标签 */
+  knowledgeAreas: string[];
 }
 
 function buildTagsPrompt(content: string): string {
-  return `你是一个专业的教研专家。请分析以下题目内容，给出难度星级和知识点标签。
+  return `你是一个专业的教研专家。请分析以下题目内容，给出科目、难度星级和知识板块标签。
 
 要求：
-1. 难度星级：1 到 5 的整数（1 最简单，5 最难）。
-2. 知识点标签：提取 2-4 个最核心的考点标签（中文，用中文逗号“，”分隔）。
-3. 必须严格以 JSON 格式输出，不要输出任何额外解释文本。
+1. 科目：从以下列表中选择最匹配的一个（数学、物理、化学、英语、语文、生物、历史、地理、政治）。
+2. 难度星级：1 到 5 的整数（1 最简单，5 最难）。
+3. 知识板块：提取 2-4 个最核心的考点板块（中文，用中文逗号“，”分隔，例如“函数，导数”）。
+4. 必须严格以 JSON 格式输出，不要输出任何额外解释文本。
 
 格式如下：
 {
+  "subject": "数学",
   "difficulty": 3,
-  "tags": "标签1，标签2，标签3"
+  "knowledgeAreas": "函数，导数，极值"
 }
 
 题目内容：
 ${content}`;
 }
 
-function parseTagsJson(text: string): { difficulty: number; knowledgePoints: string[] } {
+function parseTagsJson(text: string): { difficulty: number; subject: string; knowledgeAreas: string[] } {
   let cleaned = (text || '').trim();
   const m = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (m && m[1]) cleaned = m[1].trim();
@@ -108,20 +112,21 @@ function parseTagsJson(text: string): { difficulty: number; knowledgePoints: str
   const braceEnd = cleaned.lastIndexOf('}');
   if (braceStart !== -1 && braceEnd !== -1) cleaned = cleaned.slice(braceStart, braceEnd + 1);
 
-  const data = JSON.parse(cleaned) as { difficulty?: number; tags?: string };
+  const data = JSON.parse(cleaned) as { difficulty?: number; subject?: string; knowledgeAreas?: string };
   const difficulty = Math.min(5, Math.max(1, Math.round(Number(data.difficulty) || 3)));
-  const knowledgePoints = String(data.tags || '')
+  const subject = String(data.subject || '').trim();
+  const knowledgeAreas = String(data.knowledgeAreas || '')
     .split(/[，,]/)
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 6);
-  return { difficulty, knowledgePoints };
+  return { difficulty, subject, knowledgeAreas };
 }
 
 /**
- * 截图识别 + 知识点/难度生成。
+ * 截图识别 + 科目/难度/知识板块生成。
  * 1) 视觉模型把题目图片转写为 Markdown 文本（ocrService）
- * 2) 文本模型根据内容生成难度星级与知识点标签
+ * 2) 文本模型根据内容生成科目、难度星级与知识板块标签
  */
 export async function recognizeMistakeFromImage(dataUrl: string): Promise<RecognizeResult> {
   const config = getAiConfig();
@@ -135,16 +140,17 @@ export async function recognizeMistakeFromImage(dataUrl: string): Promise<Recogn
   }
 
   const resContent = await directTextChat(buildTagsPrompt(content), { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
-  let tags: { difficulty: number; knowledgePoints: string[] };
+  let tags: { difficulty: number; subject: string; knowledgeAreas: string[] };
   try {
     tags = parseTagsJson(resContent);
   } catch {
-    tags = { difficulty: 3, knowledgePoints: [] };
+    tags = { difficulty: 3, subject: '', knowledgeAreas: [] };
   }
 
   return {
     content,
     difficulty: tags.difficulty,
-    knowledgePoints: tags.knowledgePoints,
+    subject: tags.subject,
+    knowledgeAreas: tags.knowledgeAreas,
   };
 }

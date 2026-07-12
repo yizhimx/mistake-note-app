@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia';
 import { uid } from 'quasar';
 import { recognizeText } from '@/services/ocrService';
-import { api } from '@/services/api';
 import { getAiConfig } from '@/services/aiConfig';
+import { directTextChat } from '@/services/directAi';
 import {
   fetchQueueItems,
   addQueueItem,
@@ -11,41 +11,105 @@ import {
   clearCompletedQueueItems as dbClearCompleted,
   deleteQueueItems,
 } from '@/services/aiQueueService';
-import type { AiQueueItem } from '@/services/aiQueueService';
+import type { AiQueueItem, SplitQuestion } from '@/services/aiQueueService';
 
 function buildTagsPrompt(content: string): string {
-  return `你是一个专业的教研专家。请分析以下题目内容，给出难度星级和知识点标签。
+  return `你是一个专业的教研专家。请分析以下题目内容，给出科目、难度星级和知识板块标签。
 
 要求：
-1. 难度星级：1 到 5 的整数（1 最简单，5 最难）。
-2. 知识点标签：提取 2-4 个最核心的考点标签（中文，用中文逗号“，”分隔）。
-3. 必须严格以 JSON 格式输出，不要输出任何额外解释文本。
+1. 科目：从以下列表中选择最匹配的一个（数学、物理、化学、英语、语文、生物、历史、地理、政治）。
+2. 难度星级：1 到 5 的整数（1 最简单，5 最难）。
+3. 知识板块：提取 2-4 个最核心的考点板块（中文，用中文逗号“，”分隔，例如“函数，导数”）。
+4. 必须严格以 JSON 格式输出，不要输出任何额外解释文本。
 
 格式如下：
 {
+  "subject": "数学",
   "difficulty": 3,
-  "tags": "标签1，标签2，标签3"
+  "knowledgeAreas": "函数，导数，极值"
 }
 
 题目内容：
 ${content}`;
 }
 
-function parseTagsJson(text: string): { difficulty: number; knowledgePoints: string[] } {
+function parseTagsJson(text: string): { difficulty: number; subject: string; knowledgeAreas: string[] } {
   let cleaned = (text || '').trim();
   const m = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (m && m[1]) cleaned = m[1].trim();
   const braceStart = cleaned.indexOf('{');
   const braceEnd = cleaned.lastIndexOf('}');
   if (braceStart !== -1 && braceEnd !== -1) cleaned = cleaned.slice(braceStart, braceEnd + 1);
-  const data = JSON.parse(cleaned) as { difficulty?: number; tags?: string };
+  const data = JSON.parse(cleaned) as { difficulty?: number; subject?: string; knowledgeAreas?: string };
   const difficulty = Math.min(5, Math.max(1, Math.round(Number(data.difficulty) || 3)));
-  const knowledgePoints = String(data.tags || '')
+  const subject = String(data.subject || '').trim();
+  const knowledgeAreas = String(data.knowledgeAreas || '')
     .split(/[，,]/)
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 6);
-  return { difficulty, knowledgePoints };
+  return { difficulty, subject, knowledgeAreas };
+}
+
+function parseQuestionsJson(text: string): SplitQuestion[] {
+  let cleaned = (text || '').trim();
+  const m = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (m && m[1]) cleaned = m[1].trim();
+  const arrStart = cleaned.indexOf('[');
+  const arrEnd = cleaned.lastIndexOf(']');
+  if (arrStart !== -1 && arrEnd !== -1) cleaned = cleaned.slice(arrStart, arrEnd + 1);
+  let arr: any[];
+  try {
+    arr = JSON.parse(cleaned);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((item: any) => ({
+      content: String(item?.content || '').trim(),
+      subject: String(item?.subject || '').trim(),
+      difficulty: Math.min(5, Math.max(1, Math.round(Number(item?.difficulty) || 3))),
+      knowledgeAreas: Array.isArray(item?.knowledgeAreas)
+        ? item.knowledgeAreas.map(String).map((s: string) => s.trim()).filter(Boolean).slice(0, 6)
+        : String(item?.knowledgeAreas || '')
+            .split(/[，,]/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .slice(0, 6),
+    }))
+    .filter((q) => q.content);
+}
+
+async function splitIntoQuestions(ocrText: string): Promise<SplitQuestion[]> {
+  const prompt = `你正在整理错题。以下是从一张试卷或练习册页面识别出的文字内容，该页面可能包含多道独立题目。请将整页内容拆分为若干道独立的错题，每道错题应是一个完整的题目。
+
+每道错题包含：
+- content: 完整的题目内容（Markdown 格式，保留公式与换行）
+- subject: 所属科目（数学、物理、化学、英语、语文、生物、历史、地理、政治），不确定则为空字符串
+- difficulty: 难度评级（1-5，1 最简单 5 最难）
+- knowledgeAreas: 知识板块数组（2-4 个核心考点）
+
+返回严格 JSON 格式数组（不要包裹 markdown 代码块，不要有任何说明文字）：
+
+[
+  {
+    "content": "题目1内容",
+    "subject": "数学",
+    "difficulty": 3,
+    "knowledgeAreas": ["函数", "导数"]
+  }
+]
+
+OCR 文字内容：
+${ocrText}`;
+
+  const resContent = await directTextChat(prompt, { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
+  const parsed = parseQuestionsJson(resContent);
+  if (parsed.length === 0) {
+    return [{ content: ocrText, subject: '', difficulty: 3, knowledgeAreas: [] }];
+  }
+  return parsed;
 }
 
 async function processQueueItem(item: AiQueueItem): Promise<void> {
@@ -67,34 +131,46 @@ async function processQueueItem(item: AiQueueItem): Promise<void> {
       throw new Error('OCR 未识别到题目内容，请确认图片清晰度');
     }
 
-    // Step 2: Tags + difficulty
-    const res = await api.aiAnalyze(buildTagsPrompt(content), config);
-    let difficulty = 3;
-    let knowledgePoints: string[] = [];
-    try {
-      const tags = parseTagsJson(res.content);
-      difficulty = tags.difficulty;
-      knowledgePoints = tags.knowledgePoints;
-    } catch {
-      // fallback defaults
+    // Step 2: Split into questions (multi-question) when not linked to a single mistake
+    let questions: SplitQuestion[];
+    if (item.mistakeId) {
+      const res = await directTextChat(buildTagsPrompt(content), { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
+      let difficulty = 3;
+      let subject = '';
+      let knowledgeAreas: string[] = [];
+      try {
+        const tags = parseTagsJson(res);
+        difficulty = tags.difficulty;
+        subject = tags.subject;
+        knowledgeAreas = tags.knowledgeAreas;
+      } catch {
+        // fallback defaults
+      }
+      questions = [{ content, subject, difficulty, knowledgeAreas }];
+    } else {
+      questions = await splitIntoQuestions(content);
     }
 
+    const first = questions[0];
     await updateQueueItem(item.id, {
       status: 'completed',
-      resultContent: content,
-      resultDifficulty: difficulty,
-      resultKnowledgePoints: knowledgePoints,
+      resultContent: first.content,
+      resultDifficulty: first.difficulty,
+      resultSubject: first.subject,
+      resultKnowledgeAreas: first.knowledgeAreas,
+      resultQuestions: questions,
       processedAt: new Date().toISOString(),
     });
 
-    // If linked to a mistake, auto-apply results
+    // If linked to a mistake, auto-apply the first question
     if (item.mistakeId) {
       try {
         const { updateMistake } = await import('@/services/mistakeService');
         await updateMistake(item.mistakeId, {
-          content,
-          difficulty,
-          knowledgePoints,
+          content: first.content,
+          difficulty: first.difficulty,
+          subject: first.subject,
+          knowledgeAreas: first.knowledgeAreas,
         });
       } catch {
         // silent
@@ -144,7 +220,9 @@ export const useQueueStore = defineStore('queue', {
         status: 'pending',
         resultContent: null,
         resultDifficulty: null,
-        resultKnowledgePoints: [],
+        resultSubject: null,
+        resultKnowledgeAreas: [],
+        resultQuestions: null,
         error: null,
         createdAt: now,
         processedAt: null,

@@ -384,15 +384,25 @@ async function onCropConfirm(blob: Blob) {
     const file = new File([blob], 'cropped.jpg', { type: 'image/jpeg' });
     const dataUrl = await compressToDataUrl(file);
     const newRef = await saveImage(dataUrl);
-    const field = cropFieldTarget.value;
+    const field = cropFieldTarget.value || 'content';
     const oldRef = cropOldRef.value;
     const text = field === 'content' ? form.content : form.answer;
-    const updated = text.replaceAll(`![图片](${oldRef})`, `![图片](${newRef})`);
+    const before = text;
+    const escaped = oldRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`!\\[[^\\]]*\\]\\(${escaped}\\)`, 'g');
+    const updated = text.replace(re, `![图片](${newRef})`);
+    const changed = before !== updated;
     if (field === 'content') form.content = updated;
-    else form.answer = updated;
-    $q.notify({ type: 'positive', message: '图片裁剪完成', timeout: 2000 });
+    else if (field === 'answer') form.answer = updated;
+    $q.notify({
+      type: changed ? 'positive' : 'warning',
+      message: changed
+        ? '图片裁剪完成'
+        : `未替换 field=${field} oldRef=${oldRef}`,
+      timeout: 4000,
+    });
   } catch (e: any) {
-    $q.notify({ type: 'negative', message: `裁剪失败：${e?.message || String(e)}`, timeout: 3000 });
+    $q.notify({ type: 'negative', message: `裁剪失败：${e?.message || String(e)}`, timeout: 4000 });
   }
 }
 
@@ -526,12 +536,17 @@ function resetForm() {
   form.questionNumber = '';
 }
 
+function deriveTitle(content: string): string {
+  const firstLine = (content || '').split('\n')[0]?.replace(/[#*`$]/g, '').trim() || '';
+  return firstLine.slice(0, 30) || `错题 ${new Date().toISOString().slice(0, 10)}`;
+}
+
 async function saveForm() {
   if (!canSave.value) return;
   saving.value = true;
   try {
     const data = {
-      title: form.title,
+      title: form.title.trim() || deriveTitle(form.content),
       content: form.content,
       answer: form.answer,
       tags: [...form.tags],
