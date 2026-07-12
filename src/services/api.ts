@@ -1,4 +1,5 @@
 import { getSetting } from './db';
+import type { AiConfig } from './aiConfig';
 
 async function getBaseUrl(): Promise<string> {
   return (await getSetting('syncUrl')) || 'http://localhost:3001';
@@ -23,14 +24,20 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+  }
+
+  const res = await fetch(`${baseUrl}${path}`, init);
 
   if (!res.ok) {
-    throw new Error(`API Error: ${res.status} ${res.statusText}`);
+    let detail = `API Error: ${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      if (body.error) detail = body.error;
+    } catch { /* ignore */ }
+    throw new Error(detail);
   }
 
   return res.json();
@@ -58,11 +65,11 @@ export const api = {
     return this.post('/sync/pull', { lastSyncAt });
   },
 
-  async ocrRecognize(imageUrl: string): Promise<{ text: string }> {
-    return this.post('/ocr/recognize', { imageUrl });
+  async ocrRecognize(imageDataUrl: string, config?: AiConfig): Promise<{ text: string }> {
+    return this.post('/ocr/recognize', { imageDataUrl, ...(config || {}) });
   },
 
-  async aiAnalyze(text: string, model?: string): Promise<{ content: string }> {
-    return this.post('/ai/analyze', { text, model });
+  async aiAnalyze(prompt: string, config?: AiConfig): Promise<{ content: string }> {
+    return this.post('/ai/analyze', { prompt, ...(config || {}) });
   },
 };

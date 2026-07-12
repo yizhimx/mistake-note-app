@@ -58,6 +58,9 @@
           <q-btn class="q-mt-md full-width" color="secondary" icon="auto_awesome" label="AI 生成错题" @click="generateMistakes"
             :loading="generating" :disable="!combinedOcrText || generating" no-caps unelevated />
 
+          <q-btn v-if="images.length > 0 && images.every(i => i.ocrDone)" class="q-mt-sm full-width" color="accent" icon="queue" label="加入识别队列（后台分析）"
+            @click="addAllToQueue" no-caps :loading="addingToQueue" :disable="addingToQueue" unelevated />
+
           <q-btn v-if="generatedMistakes.length > 0" class="q-mt-sm full-width" color="primary" icon="rate_review" label="查看并保存错题"
             @click="step = 'review'" no-caps unelevated />
         </div>
@@ -155,10 +158,12 @@
 import { ref, computed } from 'vue';
 import { useQuasar, uid } from 'quasar';
 import { useMistakeStore } from '@/stores/mistakeStore';
-import { api } from '@/services/api';
+import { useQueueStore } from '@/stores/queueStore';
+import { directVisionChat, directTextChat } from '@/services/directAi';
 
 const $q = useQuasar();
 const mistakeStore = useMistakeStore();
+const queueStore = useQueueStore();
 
 const props = defineProps<{ modelValue: boolean }>();
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; imported: [count: number] }>();
@@ -214,6 +219,7 @@ const combinedOcrText = ref('');
 const generating = ref(false);
 const generatedMistakes = ref<GeneratedMistake[]>([]);
 const saving = ref(false);
+const addingToQueue = ref(false);
 
 const allSelected = computed(() => generatedMistakes.value.length > 0 && generatedMistakes.value.every(m => m.selected));
 const selectedCount = computed(() => generatedMistakes.value.filter(m => m.selected).length);
@@ -257,8 +263,9 @@ async function startOcr() {
     if (img.ocrDone) continue;
     ocrProcessingIndex.value = i;
     try {
-      const result = await api.ocrRecognize(img.dataUrl);
-      img.ocrText = result.text || '';
+      const prompt = '你是 OCR 转写助手。请把图片中的题目内容逐字逐符号转写成 Markdown 文本。只输出文本本身，不要用代码块包裹，不要多余解释。';
+      const text = await directVisionChat(prompt, img.dataUrl, { temperature: 0.2 });
+      img.ocrText = text || '';
       img.ocrDone = true;
       combinedOcrText.value += (combinedOcrText.value ? '\n---\n' : '') + `[${img.fileName}]\n${img.ocrText}`;
     } catch (e: any) {
@@ -319,8 +326,8 @@ async function generateMistakes() {
 OCR 文字内容：
 ${combinedOcrText.value}`;
 
-    const response = await api.aiAnalyze(prompt);
-    const parsed = parseJsonResponse(response.content);
+    const resContent = await directTextChat(prompt, { temperature: 0.3 });
+    const parsed = parseJsonResponse(resContent);
 
     if (!Array.isArray(parsed) || parsed.length === 0) {
       throw new Error('AI 返回数据格式异常，未能解析为错题数组');
@@ -375,6 +382,22 @@ function parseJsonResponse(text: string): any {
       }
     }
     throw new Error(`无法解析 AI 返回结果为 JSON。原始内容：\n${text}`);
+  }
+}
+
+async function addAllToQueue() {
+  addingToQueue.value = true;
+  try {
+    let count = 0;
+    for (const img of images.value) {
+      await queueStore.addToQueue(img.dataUrl);
+      count++;
+    }
+    $q.notify({ type: 'positive', message: `已将 ${count} 张图片加入识别队列，识别完成后可到队列页查看`, timeout: 3000 });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `加入队列失败：${e?.message || String(e)}`, timeout: 3500 });
+  } finally {
+    addingToQueue.value = false;
   }
 }
 

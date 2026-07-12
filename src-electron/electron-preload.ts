@@ -38,4 +38,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   saveImage: (dataUrl: string) => ipcRenderer.invoke("image:save", dataUrl),
   loadImage: (name: string) => ipcRenderer.invoke("image:load", name),
   deleteImage: (name: string) => ipcRenderer.invoke("image:delete", name),
+  aiRequest: (payload: { url: string; method?: string; headers?: Record<string, string>; body?: string }) =>
+    ipcRenderer.invoke("ai:request", payload),
 });

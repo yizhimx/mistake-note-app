@@ -12,20 +12,6 @@ export interface IDBWorker {
   close(): Promise<void>;
 }
 
-declare global {
-  interface Window {
-    electronAPI?: {
-      readDbFile(): Promise<Uint8Array | null>;
-      writeDbFile(data: Uint8Array): Promise<void>;
-      getDbPath(): Promise<string>;
-      exportPdf?(html: string): Promise<boolean>;
-      saveImage(dataUrl: string): Promise<string | null>;
-      loadImage(name: string): Promise<string | null>;
-      deleteImage(name: string): Promise<void>;
-    };
-  }
-}
-
 let dbWorker: Remote<IDBWorker> | null = null;
 let initialized = false;
 
@@ -188,6 +174,21 @@ async function initTables() {
     )
   `);
 
+  await dbWorker.exec(`
+    CREATE TABLE IF NOT EXISTS ai_queue (
+      id TEXT PRIMARY KEY,
+      mistake_id TEXT,
+      image_data TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      result_content TEXT,
+      result_difficulty TEXT,
+      result_knowledge_points TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL,
+      processed_at TEXT
+    )
+  `);
+
   // Migrate: add new columns for older databases
   for (const col of [
     'ALTER TABLE mistakes ADD COLUMN content TEXT DEFAULT \'\'',
@@ -216,6 +217,7 @@ async function initTables() {
   await dbWorker.exec(`CREATE INDEX IF NOT EXISTS idx_mistakes_created ON mistakes(created_at)`);
   await dbWorker.exec(`CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at)`);
   await dbWorker.exec(`CREATE INDEX IF NOT EXISTS idx_sync_ops_synced ON sync_operations(synced)`);
+  await dbWorker.exec(`CREATE INDEX IF NOT EXISTS idx_ai_queue_status ON ai_queue(status)`);
 }
 
 export async function getSetting(key: string): Promise<string | null> {

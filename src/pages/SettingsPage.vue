@@ -41,11 +41,16 @@
     <q-card flat bordered>
       <q-card-section>
         <div class="text-h6">AI 服务配置</div>
-        <q-input v-model="aiEndpoint" label="API 接口地址" outlined class="q-mt-sm" />
-        <q-input v-model="aiModel" label="模型名称" outlined class="q-mt-sm" />
+        <q-input v-model="aiEndpoint" label="API 接口地址" outlined class="q-mt-sm" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" />
+        <q-input v-model="aiModel" label="模型名称" outlined class="q-mt-sm" placeholder="qwen-vl-plus" />
+        <div class="text-caption q-mb-xs text-grey">截图识别需使用支持视觉的模型（如 qwen-vl-plus）；文本分析可用 qwen-plus / qwen-turbo 等。</div>
         <q-input v-model="aiApiKey" label="API Key" outlined type="password" class="q-mt-sm" />
       </q-card-section>
     </q-card>
+
+    <div class="row justify-center q-mt-md">
+      <q-btn color="primary" icon="save" label="保存设置" @click="saveSettings" unelevated class="full-width" style="max-width: 400px" />
+    </div>
   </q-page>
 </template>
 
@@ -84,5 +89,17 @@ onMounted(() => {
 function toggleDark(val: boolean) {
   $q.dark.set(val);
   $q.localStorage.set('darkMode', val);
+}
+
+function saveSettings() {
+  $q.localStorage.set('syncUrl', syncUrl.value);
+  $q.localStorage.set('syncToken', syncToken.value);
+  $q.localStorage.set('ocrProvider', ocrProvider.value);
+  $q.localStorage.set('ocrApiKey', ocrApiKey.value);
+  $q.localStorage.set('ocrSecret', ocrSecret.value);
+  $q.localStorage.set('aiEndpoint', aiEndpoint.value);
+  $q.localStorage.set('aiModel', aiModel.value);
+  $q.localStorage.set('aiApiKey', aiApiKey.value);
+  $q.notify({ type: 'positive', message: '设置已保存', timeout: 1500 });
 }
 </script>

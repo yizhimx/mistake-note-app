@@ -97,9 +97,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter, useRoute } from 'vue-router';
+import { useQueueStore } from '@/stores/queueStore';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -120,9 +121,15 @@ function toggleLeftDrawer() {
   leftDrawerOpen.value = !leftDrawerOpen.value;
 }
 
+onMounted(() => {
+  const queue = useQueueStore();
+  queue.startPolling();
+});
+
 const navLinks = [
   { label: '错题列表', icon: 'error_outline', to: { name: 'mistake-list' } },
   { label: '错题回顾', icon: 'autorenew', to: { name: 'review' } },
+  { label: '识别队列', icon: 'queue', to: { name: 'queue-list' } },
   { label: '笔记列表', icon: 'note_alt', to: { name: 'note-list' } },
   { label: '日历统计', icon: 'calendar_month', to: { name: 'calendar' } },
 ];
@@ -132,6 +139,7 @@ const bottomTabs = [
   { name: 'review', label: '回顾', icon: 'autorenew' },
   { name: 'note-list', label: '笔记', icon: 'note_alt' },
   { name: 'calendar', label: '统计', icon: 'calendar_month' },
+  { name: 'queue-list', label: '队列', icon: 'queue' },
   { name: 'settings', label: '设置', icon: 'settings' },
 ];
 

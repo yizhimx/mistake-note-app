@@ -1,4 +1,4 @@
-import { BrowserWindow, app, ipcMain, dialog } from "electron";
+import { BrowserWindow, app, ipcMain, dialog, net } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -91,6 +91,26 @@ async function registerIpcHandlers() {
     await fs.promises.writeFile(filePath, pdfData);
     return true;
   });
+
+  // Dumb HTTPS proxy for AI/OCR calls (renderer → IPC → main → net.fetch, no CORS).
+  ipcMain.handle("ai:request", async (_event, payload: {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  }) => {
+    const { url, method = "POST", headers = {}, body } = payload;
+    if (!/^https:\/\//i.test(url)) {
+      throw new Error("仅允许 HTTPS 端点");
+    }
+    try {
+      const resp = await net.fetch(url, { method, headers, body });
+      const text = await resp.text();
+      return { ok: resp.ok, status: resp.status, statusText: resp.statusText, body: text };
+    } catch (err: any) {
+      throw new Error(`网络错误：${err?.message || String(err)}`);
+    }
+  });
 }
 
 async function createWindow() {
@@ -104,6 +124,7 @@ async function createWindow() {
     useContentSize: true,
     webPreferences: {
       contextIsolation: true,
+      webSecurity: false,
       // https://v2.quasar.dev/quasar-cli-vite/developing-electron-apps/electron-preload-script
       preload: path.join(import.meta.dirname, "electron-preload.cjs")
     }

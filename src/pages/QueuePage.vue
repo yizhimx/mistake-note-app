@@ -1,0 +1,194 @@
+<template>
+  <q-page class="q-pa-md">
+    <div class="row items-center q-mb-md">
+      <div class="col">
+        <h5 class="q-my-none text-weight-medium">识别队列</h5>
+      </div>
+      <div class="col-auto q-gutter-xs">
+        <q-badge color="info" class="q-px-sm q-py-xs" v-if="pendingCount > 0">
+          {{ pendingCount }} 等待中
+        </q-badge>
+        <q-badge color="warning" class="q-px-sm q-py-xs" v-if="processingCount > 0">
+          {{ processingCount }} 处理中
+        </q-badge>
+        <q-btn flat dense no-caps icon="refresh" label="刷新" color="grey" @click="refresh" />
+        <q-btn flat dense no-caps icon="clear_all" label="清除已完成" color="grey" @click="handleClearCompleted" :disable="completedCount === 0" />
+      </div>
+    </div>
+
+    <div v-if="queue.items.length === 0" class="text-center q-mt-xl text-grey">
+      <q-icon name="queue" size="64px" />
+      <p class="q-mt-sm">暂无待处理项</p>
+      <p class="text-caption">在添加错题页面使用「AI 识别」截图后，任务会出现在这里</p>
+    </div>
+
+    <q-list bordered separator v-else>
+      <q-item v-for="item in queue.items" :key="item.id" :class="{ 'bg-grey-2': item.status === 'processing' }">
+        <q-item-section avatar>
+          <img :src="item.imageData" style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px;" />
+        </q-item-section>
+
+        <q-item-section clickable @click="toggleExpand(item.id)">
+          <q-item-label>
+            <q-badge :color="statusColor(item.status)" class="q-mr-sm">{{ statusLabel(item.status) }}</q-badge>
+            <span class="text-caption text-grey">{{ formatDate(item.createdAt) }}</span>
+          </q-item-label>
+          <q-item-label caption lines="1" v-if="item.status === 'completed' && item.resultContent">
+            {{ item.resultContent.slice(0, 80) }}…
+          </q-item-label>
+          <q-item-label caption class="text-negative" v-else-if="item.status === 'failed' && item.error">
+            {{ item.error }}
+          </q-item-label>
+          <q-item-label caption v-else-if="item.mistakeId">
+            关联错题
+          </q-item-label>
+        </q-item-section>
+
+        <q-item-section side>
+          <div class="q-gutter-xs">
+            <q-btn v-if="item.status === 'pending'" flat dense icon="cancel" color="negative" size="sm" @click="queue.cancelItem(item.id)" />
+            <q-btn v-if="item.status === 'failed'" flat dense icon="refresh" color="warning" size="sm" @click="queue.retryItem(item.id)" />
+            <q-btn v-if="item.status === 'completed'" flat dense icon="check_circle" color="positive" size="sm" @click="applyResult(item)" />
+            <q-btn flat dense icon="delete" color="grey" size="sm" @click="queue.removeItem(item.id)" />
+          </div>
+        </q-item-section>
+
+        <!-- Expanded detail -->
+        <template v-if="expandedId === item.id && item.status === 'completed' && item.resultContent">
+          <q-item-section>
+            <q-separator class="q-my-sm" />
+            <div class="markdown-preview bg-grey-1 q-pa-sm rounded-borders" style="max-height: 300px; overflow-y: auto; font-size: 13px;" v-html="renderMd(item.resultContent || '')" />
+            <div class="q-mt-xs q-gutter-xs">
+              <q-chip v-if="item.resultDifficulty" size="sm" icon="star" color="orange">{{ item.resultDifficulty }} 星</q-chip>
+              <q-chip v-for="kp in item.resultKnowledgePoints" :key="kp" size="sm" color="primary">{{ kp }}</q-chip>
+            </div>
+          </q-item-section>
+        </template>
+      </q-item>
+    </q-list>
+  </q-page>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useQuasar } from 'quasar';
+import { useRouter } from 'vue-router';
+import { uid } from 'quasar';
+import { useQueueStore } from '@/stores/queueStore';
+import { useMistakeStore } from '@/stores/mistakeStore';
+import { renderMarkdown } from '@/utils/markdown';
+import { addMistake } from '@/services/mistakeService';
+import type { AiQueueItem } from '@/services/aiQueueService';
+
+const $q = useQuasar();
+const router = useRouter();
+const queue = useQueueStore();
+const mistakeStore = useMistakeStore();
+
+const expandedId = ref<string | null>(null);
+
+const pendingCount = computed(() => queue.pendingCount);
+const processingCount = computed(() => queue.processingItems.length);
+const completedCount = computed(() => queue.completedItems.length);
+
+onMounted(async () => {
+  await queue.fetchAll();
+  queue.startPolling();
+});
+
+onUnmounted(() => {
+  queue.stopPolling();
+});
+
+function toggleExpand(id: string) {
+  expandedId.value = expandedId.value === id ? null : id;
+}
+
+function statusColor(s: string): string {
+  const map: Record<string, string> = {
+    pending: 'grey',
+    processing: 'warning',
+    completed: 'positive',
+    failed: 'negative',
+    cancelled: 'grey-5',
+  };
+  return map[s] || 'grey';
+}
+
+function statusLabel(s: string): string {
+  const map: Record<string, string> = {
+    pending: '等待',
+    processing: '处理中',
+    completed: '完成',
+    failed: '失败',
+    cancelled: '已取消',
+  };
+  return map[s] || s;
+}
+
+function formatDate(d: string): string {
+  return d ? d.slice(0, 16).replace('T', ' ') : '';
+}
+
+async function refresh() {
+  await queue.fetchAll();
+}
+
+async function handleClearCompleted() {
+  await queue.clearCompleted();
+  $q.notify({ type: 'positive', message: '已清除', timeout: 1500 });
+}
+
+function renderMd(text: string): string {
+  return renderMarkdown(text);
+}
+
+async function applyResult(item: AiQueueItem) {
+  if (!item.resultContent) return;
+  try {
+    const now = new Date().toISOString();
+    const id = uid();
+    const record = {
+      id,
+      title: (item.resultContent || '').split('\n')[0]?.replace(/[#*`$]/g, '').trim().slice(0, 30) || `错题 ${now.slice(0, 10)}`,
+      content: item.resultContent,
+      imageUrls: [],
+      tags: [],
+      subject: '',
+      answer: '',
+      answerImages: [],
+      difficulty: item.resultDifficulty || 0,
+      knowledgePoints: item.resultKnowledgePoints,
+      year: '',
+      knowledgeAreas: [],
+      sourcePaperType: '',
+      sourcePaperName: '',
+      questionNumber: '',
+      notes: '',
+      aiAnalysis: null,
+      ocrText: null,
+      createdAt: now,
+      updatedAt: now,
+      reviewCount: 0,
+      lastReviewAt: null,
+      masteryLevel: null,
+      sm2Data: null,
+      linkedNoteIds: [],
+      synced: false,
+    };
+    await addMistake(record as any);
+    await mistakeStore.fetchAll();
+    await queue.removeItem(item.id);
+    $q.notify({
+      type: 'positive',
+      message: '已创建错题',
+      timeout: 2000,
+      actions: [
+        { label: '查看', color: 'white', handler: () => router.push({ name: 'mistake-detail', params: { id } }) },
+      ],
+    });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `创建错题失败：${e?.message || String(e)}`, timeout: 3000 });
+  }
+}
+</script>

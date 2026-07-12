@@ -1,9 +1,19 @@
-import { api } from './api';
+import { getAiConfig } from './aiConfig';
+import { directVisionChat } from './directAi';
 
-export async function recognizeText(imageUrl: string): Promise<string> {
+export async function recognizeText(dataUrl: string): Promise<string> {
+  const config = getAiConfig();
+  if (!config.aiApiKey) {
+    throw new Error('未配置 AI API Key，请先在设置中填写');
+  }
   try {
-    const result = await api.ocrRecognize(imageUrl);
-    return result.text;
+    const prompt =
+      '你是 OCR 转写助手。请把图片中的题目内容逐字逐符号转写成 Markdown 文本。\n' +
+      '规则：\n' +
+      '- 数学公式用 LaTeX 行内 $...$ 或块级 $$...$$ 表示。\n' +
+      '- 禁止解题、禁止推理、禁止补全、禁止生成答案与解析。\n' +
+      '- 只输出题目本身的 Markdown 文本，不要用代码块包裹，不要输出多余解释。';
+    return await directVisionChat(prompt, dataUrl, { temperature: 0.2 });
   } catch (e) {
     console.error('OCR recognition failed:', e);
     throw e;

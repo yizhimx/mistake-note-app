@@ -147,7 +147,7 @@
 import { ref, computed, reactive } from 'vue';
 import { useQuasar, uid } from 'quasar';
 import { useNoteStore } from '@/stores/noteStore';
-import { api } from '@/services/api';
+import { directVisionChat, directTextChat } from '@/services/directAi';
 
 const $q = useQuasar();
 const noteStore = useNoteStore();
@@ -232,8 +232,9 @@ async function startOcr() {
     if (img.ocrDone) continue;
     ocrProcessingIndex.value = i;
     try {
-      const result = await api.ocrRecognize(img.dataUrl);
-      img.ocrText = result.text || '';
+      const prompt = '你是 OCR 转写助手。请把图片中的内容逐字逐符号转写成 Markdown 文本。只输出文本本身，不要用代码块包裹，不要多余解释。';
+      const text = await directVisionChat(prompt, img.dataUrl, { temperature: 0.2 });
+      img.ocrText = text || '';
       img.ocrDone = true;
       combinedOcrText.value += (combinedOcrText.value ? '\n---\n' : '') + `[${img.fileName}]\n${img.ocrText}`;
     } catch (e: any) {
@@ -281,8 +282,8 @@ async function generateNotes() {
 OCR 文字内容：
 ${combinedOcrText.value}`;
 
-    const response = await api.aiAnalyze(prompt);
-    const parsed = parseJsonResponse(response.content);
+    const resContent = await directTextChat(prompt, { temperature: 0.3 });
+    const parsed = parseJsonResponse(resContent);
 
     if (!Array.isArray(parsed) || parsed.length === 0) {
       throw new Error('AI 返回数据格式异常，未能解析为笔记数组');

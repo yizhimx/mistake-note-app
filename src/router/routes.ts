@@ -37,6 +37,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/CalendarPage.vue'),
       },
       {
+        path: 'queue',
+        name: 'queue-list',
+        component: () => import('@/pages/QueuePage.vue'),
+      },
+      {
         path: 'settings',
         name: 'settings',
         component: () => import('@/pages/SettingsPage.vue'),

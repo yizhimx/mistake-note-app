@@ -7,6 +7,7 @@
       <div class="col-auto q-gutter-xs">
         <q-btn flat dense no-caps icon="select_all" :label="allSelected ? '取消全选' : '全选'" color="grey" @click="toggleSelectAll" />
         <q-btn v-if="selectedIds.length > 0" flat dense icon="file_download" color="primary" :label="`导出所选 (${selectedIds.length})`" @click="exportSelected" no-caps unelevated />
+        <q-btn v-if="selectedIds.length > 0" flat dense icon="auto_awesome" color="secondary" :label="`批量识别 (${selectedIds.length})`" @click="batchRecognitionSelected" no-caps unelevated :loading="batchQueuing" :disable="batchQueuing" />
         <q-btn flat dense no-caps icon="filter_list" label="筛选" @click="showFilter = !showFilter" :color="hasActiveFilters ? 'primary' : 'grey'" />
         <q-btn v-if="hasActiveFilters" flat dense no-caps icon="clear" label="重置" color="grey" @click="clearFilters" />
         <q-btn color="secondary" no-caps unelevated icon="auto_awesome" label="批量导入" @click="showBatchImport = true" class="q-mr-sm" />
@@ -60,6 +61,13 @@
               </template>
             </q-input>
           </div>
+          <div class="col-12 col-md-3 q-mb-sm">
+            <q-checkbox v-model="filters.noContent" label="仅显示未添加题目的" dense />
+          </div>
+          <div class="col-12 col-md-3 q-mb-sm">
+            <q-btn v-if="filters.noContent && filteredMistakes.length > 0" icon="auto_awesome" label="全部加入识别队列" no-caps unelevated color="primary"
+              @click="batchAddToQueue" :disable="batchQueuing" :loading="batchQueuing" />
+          </div>
         </div>
         <div class="row q-mb-md">
           <div class="col-12 col-md-4 q-mb-sm">
@@ -104,13 +112,13 @@
         </q-item-section>
         <q-item-section side>
           <q-btn flat round icon="more_vert">
-            <q-menu auto-close>
-              <q-list>
-                <q-item clickable @click="deleteMistake(mistake.id)">
-                  <q-item-section class="text-negative">删除</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
+              <q-menu auto-close>
+                <q-list>
+                  <q-item clickable @click="deleteMistake(mistake.id)">
+                    <q-item-section class="text-negative">删除</q-item-section>
+                  </q-item>
+                </q-list>
+              </q-menu>
           </q-btn>
         </q-item-section>
       </q-item>
@@ -161,10 +169,13 @@ import { uid } from 'quasar';
 import MistakeForm from '@/components/MistakeForm.vue';
 import BatchMistakeImportDialog from '@/components/BatchMistakeImportDialog.vue';
 import { useMistakeStore } from '@/stores/mistakeStore';
+import { useQueueStore } from '@/stores/queueStore';
+import { loadImage } from '@/services/imageStore';
 import { buildExportHtml } from '@/utils/markdown';
 
 const $q = useQuasar();
 const mistakeStore = useMistakeStore();
+const queueStore = useQueueStore();
 
 const showAddDialog = ref(false);
 const showBatchImport = ref(false);
@@ -172,6 +183,7 @@ const showBatchImport = ref(false);
 const showFilter = ref(true);
 const selectedIds = ref<string[]>([]);
 const mistakeFormRef = ref<any>(null);
+const batchQueuing = ref(false);
 
 const subjects = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
 
@@ -188,6 +200,7 @@ const filters = reactive({
   tags: '',
   content: '',
   difficulty: [] as number[],
+  noContent: false,
   dateFrom: '',
   dateTo: '',
 });
@@ -253,6 +266,63 @@ function onBatchImported(count: number) {
   $q.notify({ type: 'positive', message: `成功导入 ${count} 道错题`, timeout: 2000 });
 }
 
+async function resolveImageUrl(url: string): Promise<string> {
+  if (url.startsWith('local:')) {
+    const resolved = await loadImage(url);
+    return resolved || url;
+  }
+  return url;
+}
+
+async function batchAddToQueue() {
+  const target = filteredMistakes.value.filter(m => m.imageUrls?.[0]);
+  if (target.length === 0) {
+    $q.notify({ type: 'warning', message: '筛选结果中没有任何包含图片的题目', timeout: 2500 });
+    return;
+  }
+  batchQueuing.value = true;
+  try {
+    let count = 0;
+    for (const m of target) {
+      const dataUrl = await resolveImageUrl(m.imageUrls[0]!);
+      await queueStore.addToQueue(dataUrl, m.id);
+      count++;
+    }
+    $q.notify({ type: 'positive', message: `已将 ${count} 道题目加入识别队列（完成后自动填充）`, timeout: 3000 });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `批量加入队列失败：${e?.message || String(e)}`, timeout: 3500 });
+  } finally {
+    batchQueuing.value = false;
+  }
+}
+
+async function batchRecognitionSelected() {
+  const targets = mistakeStore.mistakes.filter(m => selectedIds.value.includes(m.id));
+  const withImage = targets.filter(m => m.imageUrls?.[0]);
+  const skipped = targets.length - withImage.length;
+  if (withImage.length === 0) {
+    $q.notify({ type: 'warning', message: '所选题目均无图片', timeout: 2500 });
+    return;
+  }
+  batchQueuing.value = true;
+  try {
+    let count = 0;
+    for (const m of withImage) {
+      const dataUrl = await resolveImageUrl(m.imageUrls[0]!);
+      await queueStore.addToQueue(dataUrl, m.id);
+      count++;
+    }
+    const msg = skipped > 0
+      ? `已将 ${count} 道加入识别队列（${skipped} 道无图片已跳过）`
+      : `已将 ${count} 道题目加入识别队列`;
+    $q.notify({ type: 'positive', message: msg, timeout: 3000 });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `批量识别失败：${e?.message || String(e)}`, timeout: 3500 });
+  } finally {
+    batchQueuing.value = false;
+  }
+}
+
 function deleteMistake(id: string) {
   $q.dialog({
     title: '确认删除',
@@ -281,6 +351,9 @@ const filteredMistakes = computed(() => {
   if (filters.difficulty.length > 0) {
     result = result.filter(m => filters.difficulty.includes(m.difficulty || 0));
   }
+  if (filters.noContent) {
+    result = result.filter(m => !m.content || !m.content.trim());
+  }
   if (filters.dateFrom || filters.dateTo) {
     const from = filters.dateFrom ? new Date(filters.dateFrom).getTime() : null;
     const to = filters.dateTo ? new Date(filters.dateTo).getTime() + 86400000 : null;
@@ -302,7 +375,7 @@ const paginatedMistakes = computed(() => {
 const totalPages = computed(() => Math.max(1, Math.ceil(filteredMistakes.value.length / pageSize)));
 
 const hasActiveFilters = computed(() =>
-  filters.subject !== null || filters.tags !== '' || filters.content !== '' || filters.difficulty.length > 0 || filters.dateFrom !== '' || filters.dateTo !== ''
+  filters.subject !== null || filters.tags !== '' || filters.content !== '' || filters.difficulty.length > 0 || filters.noContent || filters.dateFrom !== '' || filters.dateTo !== ''
 );
 
 function masterLabel(level: string | null): string {
@@ -319,15 +392,12 @@ function formatDate(d: string): string {
   return d ? d.slice(0, 10) : '';
 }
 
-function doSearch() {
-  $q.notify({ type: 'info', message: `找到 ${filteredMistakes.value.length} 条结果`, timeout: 1500 });
-}
-
 function clearFilters() {
   filters.subject = null;
   filters.tags = '';
   filters.content = '';
   filters.difficulty = [];
+  filters.noContent = false;
   filters.dateFrom = '';
   filters.dateTo = '';
   currentPage.value = 1;
@@ -335,8 +405,9 @@ function clearFilters() {
 }
 
 // 筛选条件变化时重置到第一页
-watch([() => filters.subject, () => filters.tags, () => filters.content, () => filters.difficulty, () => filters.dateFrom, () => filters.dateTo], () => {
+watch([() => filters.subject, () => filters.tags, () => filters.content, () => filters.difficulty, () => filters.noContent, () => filters.dateFrom, () => filters.dateTo], () => {
   currentPage.value = 1;
+  selectedIds.value = [];
 });
 
 const allSelected = computed(() =>

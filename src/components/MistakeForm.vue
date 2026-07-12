@@ -58,7 +58,7 @@
           <div class="row items-center q-mb-sm">
             <div class="text-weight-medium">题目内容 (Markdown)</div>
             <q-space />
-            <q-btn flat dense no-caps icon="auto_awesome" label="文字识别" color="primary" size="sm" @click="runOcr" />
+            <q-btn flat dense no-caps icon="auto_awesome" label="AI 识别" color="primary" size="sm" @click="runAiRecognize" />
           </div>
           <div class="toolbar q-mb-xs q-gutter-xs">
             <q-btn flat dense size="sm" icon="format_bold" @click="insertMarkdown('**', '**')" />
@@ -66,6 +66,7 @@
             <q-btn flat dense size="sm" icon="code" @click="insertMarkdown('`', '`')" />
             <q-btn flat dense size="sm" icon="functions" @click="insertMarkdown('$$', '$$')" />
             <q-btn flat dense size="sm" icon="image" @click="insertImage" />
+            <q-btn flat dense size="sm" icon="crop" @click="cropContentImage" />
             <q-btn flat dense size="sm" icon="content_paste" color="grey" title="粘贴图片 (Ctrl+V)" @click="pasteImageFromClipboard('content')" />
           </div>
           <q-input ref="contentEditorRef" v-model="form.content" outlined dense autogrow type="textarea" class="q-mb-md font-mono content-editor" placeholder="用 Markdown 编写题目内容，支持 LaTeX：$\int_a^b f(x)dx$（Ctrl+V 可粘贴图片）" input-style="min-height: 120px; font-family: monospace; font-size: 13px" @paste="onContentPaste" />
@@ -81,6 +82,7 @@
             <q-btn flat dense size="sm" icon="code" @click="insertAnswerMarkdown('`', '`')" />
             <q-btn flat dense size="sm" icon="functions" @click="insertAnswerMarkdown('$$', '$$')" />
             <q-btn flat dense size="sm" icon="image" @click="insertAnswerImage" />
+            <q-btn flat dense size="sm" icon="crop" @click="cropAnswerImage" />
             <q-btn flat dense size="sm" icon="content_paste" color="grey" title="粘贴图片 (Ctrl+V)" @click="pasteImageFromClipboard('answer')" />
           </div>
           <q-input ref="answerEditorRef" v-model="form.answer" outlined dense autogrow type="textarea" class="q-mb-md font-mono answer-editor" placeholder="答案内容，支持 Markdown 和 LaTeX（Ctrl+V 可粘贴图片）" input-style="min-height: 100px; font-family: monospace; font-size: 13px" @paste="onAnswerPaste" />
@@ -96,16 +98,21 @@
         </div>
       </div>
     </q-card-section>
+    <ImageCropDialog v-model="showCropDialog" :image-data-url="cropImageDataUrl" @confirm="onCropConfirm" @cancel="onCropCancel" />
   </q-card>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, nextTick } from 'vue';
 import { useQuasar } from 'quasar';
+import { useRouter } from 'vue-router';
 import { compressToDataUrl } from '@/services/ocrService';
-import { saveImage } from '@/services/imageStore';
+import { saveImage, extractImageRefs, loadImage, getCachedImage } from '@/services/imageStore';
 import { renderMarkdown } from '@/utils/markdown';
-import { api } from '@/services/api';
+import ImageCropDialog from '@/components/ImageCropDialog.vue';
+import { getAiConfig } from '@/services/aiConfig';
+import { directTextChat } from '@/services/directAi';
+import { useQueueStore } from '@/stores/queueStore';
 import type { MistakeRecord } from '@/stores/mistakeStore';
 
 const props = defineProps<{
@@ -119,10 +126,16 @@ const emit = defineEmits<{
 }>();
 
 const $q = useQuasar();
+const router = useRouter();
+const queueStore = useQueueStore();
 
 const saving = ref(false);
 const contentEditorRef = ref<any>(null);
 const answerEditorRef = ref<any>(null);
+const showCropDialog = ref(false);
+const cropImageDataUrl = ref('');
+const cropFieldTarget = ref<'content' | 'answer'>('content');
+const cropOldRef = ref('');
 
 const form = reactive({
   title: '',
@@ -312,13 +325,141 @@ async function pasteImageFromClipboard(target: 'content' | 'answer') {
   }
 }
 
-function runOcr() {
-  $q.notify({ type: 'info', message: 'OCR 功能将在后续版本接入', timeout: 2000 });
+async function cropContentImage() {
+  const refs = extractImageRefs(form.content);
+  if (refs.length === 0) {
+    $q.notify({ type: 'warning', message: '题目内容中没有可裁剪的图片', timeout: 2000 });
+    return;
+  }
+  const ref = await pickCropRef(refs, 'content');
+  if (!ref) return;
+  const dataUrl = await loadImage(ref);
+  if (!dataUrl) { $q.notify({ type: 'negative', message: '图片加载失败', timeout: 2000 }); return; }
+  cropImageDataUrl.value = dataUrl;
+  cropOldRef.value = ref;
+  cropFieldTarget.value = 'content';
+  showCropDialog.value = true;
+}
+
+async function cropAnswerImage() {
+  const refs = extractImageRefs(form.answer);
+  if (refs.length === 0) {
+    $q.notify({ type: 'warning', message: '答案中没有可裁剪的图片', timeout: 2000 });
+    return;
+  }
+  const ref = await pickCropRef(refs, 'answer');
+  if (!ref) return;
+  const dataUrl = await loadImage(ref);
+  if (!dataUrl) { $q.notify({ type: 'negative', message: '图片加载失败', timeout: 2000 }); return; }
+  cropImageDataUrl.value = dataUrl;
+  cropOldRef.value = ref;
+  cropFieldTarget.value = 'answer';
+  showCropDialog.value = true;
+}
+
+async function pickCropRef(refs: string[], field: string): Promise<string | null> {
+  if (refs.length === 1) return refs[0] ?? null;
+  const names = refs.map((r, i) => ({ label: `图片 ${i + 1}`, value: r }));
+  return new Promise(resolve => {
+    $q.dialog({
+      title: '选择要裁剪的图片',
+      options: {
+        type: 'radio',
+        model: '',
+        items: names,
+      },
+      cancel: true,
+      persistent: true,
+    }).onOk((selected: string) => {
+      resolve(selected);
+    }).onCancel(() => {
+      resolve(null);
+    });
+  });
+}
+
+async function onCropConfirm(blob: Blob) {
+  showCropDialog.value = false;
+  try {
+    const file = new File([blob], 'cropped.jpg', { type: 'image/jpeg' });
+    const dataUrl = await compressToDataUrl(file);
+    const newRef = await saveImage(dataUrl);
+    const field = cropFieldTarget.value;
+    const oldRef = cropOldRef.value;
+    const text = field === 'content' ? form.content : form.answer;
+    const updated = text.replaceAll(`![图片](${oldRef})`, `![图片](${newRef})`);
+    if (field === 'content') form.content = updated;
+    else form.answer = updated;
+    $q.notify({ type: 'positive', message: '图片裁剪完成', timeout: 2000 });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `裁剪失败：${e?.message || String(e)}`, timeout: 3000 });
+  }
+}
+
+function onCropCancel() {
+  showCropDialog.value = false;
+}
+
+async function runAiRecognize() {
+  const config = getAiConfig();
+  if (!config.aiApiKey) {
+    $q.notify({ type: 'warning', message: '请先在设置中填写 AI API Key', timeout: 2500 });
+    return;
+  }
+  const refs = extractImageRefs(form.content);
+  if (refs.length > 0) {
+    let count = 0;
+    for (const ref of refs) {
+      try {
+        const dataUrl = await loadImage(ref);
+        if (dataUrl) {
+          await queueStore.addToQueue(dataUrl);
+          count++;
+        }
+      } catch { /* skip failed */ }
+    }
+    if (count > 0) {
+      $q.notify({
+        type: 'positive',
+        message: `已将 ${count} 张图片加入识别队列`,
+        timeout: 2500,
+        actions: [{ label: '查看队列', color: 'white', handler: () => router.push({ name: 'queue-list' }) }],
+      });
+    } else {
+      $q.notify({ type: 'warning', message: '无法加载题目内容中的图片', timeout: 2500 });
+    }
+    return;
+  }
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressToDataUrl(file);
+      await queueStore.addToQueue(dataUrl);
+      $q.notify({
+        type: 'positive',
+        message: '已加入识别队列，处理完成后可查看结果',
+        timeout: 2500,
+        actions: [{ label: '查看队列', color: 'white', handler: () => router.push({ name: 'queue-list' }) }],
+      });
+    } catch (e: any) {
+      $q.notify({ type: 'negative', message: `加入队列失败：${e?.message || String(e)}`, timeout: 3500 });
+    }
+  };
+  input.click();
 }
 
 async function runAiAnalysis() {
   if (!form.content.trim()) {
     $q.notify({ type: 'warning', message: '请先输入题目内容', timeout: 2000 });
+    return;
+  }
+  const config = getAiConfig();
+  if (!config.aiApiKey) {
+    $q.notify({ type: 'warning', message: '请先在设置中填写 AI API Key', timeout: 2500 });
     return;
   }
   try {
@@ -339,9 +480,9 @@ async function runAiAnalysis() {
 （列出学生容易犯的错误）
 
 题目：${form.content}`;
-    const res = await api.aiAnalyze(prompt);
+    const content = await directTextChat(prompt, { temperature: 0.3 });
     loading();
-    form.answer = form.answer ? form.answer + '\n\n---\n\n' + res.content : res.content;
+    form.answer = form.answer ? form.answer + '\n\n---\n\n' + content : content;
     $q.notify({ type: 'positive', message: 'AI 解析完成，已填入答案框', timeout: 2000 });
   } catch (e: any) {
     $q.notify({ type: 'negative', message: `AI 解析失败：${e?.message || String(e)}`, timeout: 3000 });
