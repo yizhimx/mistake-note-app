@@ -1,7 +1,7 @@
 import { marked } from 'marked';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { getCachedImage, preloadFromMarkdown } from '@/services/imageStore';
+import { getCachedImage, preloadFromMarkdown, resolveImageRef } from '@/services/imageStore';
 
 const PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
@@ -30,9 +30,8 @@ function renderKatex(text: string): string {
 }
 
 function resolveImages(text: string): string {
-  return text.replace(/!\[([^\]]*)\]\((local:[^)]+)\)/g, (_m: string, alt: string, ref: string) => {
-    const dataUrl = getCachedImage(ref);
-    return `![${alt}](${dataUrl || PLACEHOLDER})`;
+  return text.replace(/!\[([^\]]*)\]\(((local|cloud):[^)]+)\)/g, (_m: string, alt: string, ref: string) => {
+    return `![${alt}](${resolveImageRef(ref)})`;
   });
 }
 

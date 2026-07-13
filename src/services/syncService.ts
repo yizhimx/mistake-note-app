@@ -1,5 +1,6 @@
 import { getDb, saveDb } from './db';
-import { loadImage, saveImageData, extractImageRefs } from '@/services/imageStore';
+import { loadImage, saveImage, saveImageData, extractImageRefs } from '@/services/imageStore';
+import { isCloudStoreConfigured } from '@/services/cloudStore';
 import { useSyncStore } from '@/stores/syncStore';
 import { getSupabaseClient, getCurrentUser } from './supabase';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -49,6 +50,7 @@ async function doSync() {
   try {
     await pushUnsynced(supabase);
     await pullRemote(supabase, store.lastSyncAt);
+    await migrateLocalToCloud();
     store.setLastSyncAt(new Date().toISOString());
     store.syncState = 'synced';
   } catch (e) {
@@ -284,6 +286,91 @@ function collectImageRefsFromRecord(row: any): string[] {
   }
   return Array.from(refs);
 }
+
+/**
+ * Migrate existing `local:` image references to `cloud:` references.
+ * Uploads each local image to 缤纷云 and replaces the ref in the database.
+ * Runs once per sync cycle; idempotent — already-migrated refs are skipped.
+ */
+async function migrateLocalToCloud() {
+  if (!isCloudStoreConfigured()) return;
+  const db = await getDb();
+  const tables: Array<{ name: string; textCols: string[]; jsonCols: string[] }> = [
+    { name: 'mistakes', textCols: ['content', 'answer'], jsonCols: ['image_urls', 'answer_images'] },
+    { name: 'notes', textCols: ['content'], jsonCols: ['image_urls'] },
+  ];
+  for (const table of tables) {
+    const allCols = [...table.textCols, ...table.jsonCols];
+    const rows = await db.all(`SELECT id, ${allCols.join(',')} FROM ${table.name} WHERE content LIKE '%local:%'`);
+    for (const row of rows) {
+      let changed = false;
+      const updates: Record<string, string> = {};
+      // Migrate text columns (markdown content/answer)
+      for (const col of table.textCols) {
+        if (!row[col] || !row[col].includes('local:')) continue;
+        const newText = await _migrateText(row[col]);
+        if (newText !== row[col]) {
+          updates[col] = newText;
+          changed = true;
+        }
+      }
+      // Migrate JSON columns (image_urls / answer_images arrays)
+      for (const col of table.jsonCols) {
+        if (!row[col]) continue;
+        try {
+          const arr = JSON.parse(row[col]);
+          if (!Array.isArray(arr)) continue;
+          let arrChanged = false;
+          const newArr = await Promise.all(arr.map(async (item: any) => {
+            if (typeof item === 'string' && item.startsWith('local:')) {
+              const cloudRef = await _migrateSingleRef(item);
+              if (cloudRef && cloudRef !== item) { arrChanged = true; return cloudRef; }
+            }
+            return item;
+          }));
+          if (arrChanged) {
+            updates[col] = JSON.stringify(newArr);
+            changed = true;
+          }
+        } catch { /* ignore parse errors */ }
+      }
+      if (changed) {
+        const setClauses = Object.keys(updates).map(k => `${k}=?`).join(',');
+        const values = [...Object.values(updates), row.id];
+        await db.run(`UPDATE ${table.name} SET ${setClauses}, synced=0 WHERE id=?`, values);
+      }
+    }
+  }
+}
+
+/** Upload a single local: ref to cloud and return the cloud: ref. */
+async function _migrateSingleRef(ref: string): Promise<string> {
+  if (!ref.startsWith('local:')) return ref;
+  const dataUrl = await loadImage(ref);
+  if (!dataUrl) return ref;
+  try {
+    const cloudRef = await saveImage(dataUrl);
+    if (cloudRef && cloudRef.startsWith('cloud:')) return cloudRef;
+  } catch (e) {
+    console.warn('[migrate] upload failed for', ref, e);
+  }
+  return ref;
+}
+
+/** Migrate all local: refs in a text blob to cloud: refs. */
+async function _migrateText(text: string): Promise<string> {
+  const refs = extractImageRefs(text);
+  let result = text;
+  for (const ref of refs) {
+    if (!ref.startsWith('local:')) continue;
+    const cloudRef = await _migrateSingleRef(ref);
+    if (cloudRef !== ref) {
+      result = result.replaceAll(ref, cloudRef);
+    }
+  }
+  return result;
+}
+
 
 async function uploadLocalImagesForRecord(supabase: SupabaseClient, row: any, userId: string): Promise<void> {
   const refs = collectImageRefsFromRecord(row);

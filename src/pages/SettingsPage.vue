@@ -68,6 +68,28 @@
       </q-card-section>
     </q-card>
 
+    <q-card flat bordered class="q-mb-md">
+      <q-card-section>
+        <div class="text-h6">缤纷云存储</div>
+        <div class="text-caption text-grey q-mb-sm">用于跨设备同步图片（S3 兼容存储，如 缤纷云、MinIO、AWS S3）</div>
+        <q-input v-model="cloudEndpoint" label="Endpoint 地址" outlined class="q-mt-sm" placeholder="https://s3.binfen.com" />
+        <q-input v-model="cloudRegion" label="Region" outlined class="q-mt-sm" placeholder="auto" />
+        <q-input v-model="cloudBucket" label="Bucket 名称" outlined class="q-mt-sm" placeholder="my-images" />
+        <q-input v-model="cloudAccessKey" label="Access Key" outlined class="q-mt-sm" />
+        <q-input v-model="cloudSecretKey" label="Secret Key" outlined type="password" class="q-mt-sm" />
+        <q-input v-model="cloudPublicUrl" label="Public URL 前缀（可选）" outlined class="q-mt-sm"
+          placeholder="留空则自动生成" />
+        <div class="row q-mt-sm q-gutter-sm">
+          <q-btn label="测试连接" color="secondary" outline :loading="cloudTesting" @click="handleTestCloud"
+            :disable="!cloudReady" />
+        </div>
+        <q-banner v-if="cloudStatus" :class="cloudStatusOk ? 'bg-positive' : 'bg-negative'"
+          class="text-white q-pa-sm q-mt-sm rounded-borders">
+          {{ cloudStatus }}
+        </q-banner>
+      </q-card-section>
+    </q-card>
+
     <div class="row justify-center q-mt-md">
       <q-btn color="primary" icon="save" label="保存设置" @click="saveSettings" unelevated class="full-width" style="max-width: 400px" />
     </div>
@@ -78,6 +100,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { createSupabaseClient, restoreSession, signIn, signUp, signOut } from '@/services/supabase';
+import { testConnection as testCloud, initCloudStore } from '@/services/cloudStore';
 
 const $q = useQuasar();
 
@@ -101,6 +124,17 @@ const aiEndpoint = ref('');
 const aiModel = ref('');
 const aiApiKey = ref('');
 
+const cloudEndpoint = ref('');
+const cloudRegion = ref('auto');
+const cloudBucket = ref('');
+const cloudAccessKey = ref('');
+const cloudSecretKey = ref('');
+const cloudPublicUrl = ref('');
+const cloudTesting = ref(false);
+const cloudStatus = ref('');
+const cloudStatusOk = ref(false);
+const cloudReady = computed(() => !!cloudEndpoint.value && !!cloudBucket.value && !!cloudAccessKey.value && !!cloudSecretKey.value);
+
 onMounted(async () => {
   darkMode.value = $q.dark.isActive;
   supabaseUrl.value = $q.localStorage.getItem('supabaseUrl') as string || '';
@@ -110,6 +144,12 @@ onMounted(async () => {
   aiEndpoint.value = $q.localStorage.getItem('aiEndpoint') as string || '';
   aiModel.value = $q.localStorage.getItem('aiModel') as string || '';
   aiApiKey.value = $q.localStorage.getItem('aiApiKey') as string || '';
+  cloudEndpoint.value = $q.localStorage.getItem('cloudEndpoint') as string || '';
+  cloudRegion.value = $q.localStorage.getItem('cloudRegion') as string || 'auto';
+  cloudBucket.value = $q.localStorage.getItem('cloudBucket') as string || '';
+  cloudAccessKey.value = $q.localStorage.getItem('cloudAccessKey') as string || '';
+  cloudSecretKey.value = $q.localStorage.getItem('cloudSecretKey') as string || '';
+  cloudPublicUrl.value = $q.localStorage.getItem('cloudPublicUrl') as string || '';
 
   if (supabaseUrl.value && supabaseAnonKey.value) {
     createSupabaseClient(supabaseUrl.value, supabaseAnonKey.value);
@@ -183,6 +223,28 @@ async function logout() {
   }
 }
 
+async function handleTestCloud() {
+  cloudTesting.value = true;
+  cloudStatus.value = '';
+  try {
+    const ok = await testCloud({
+      endpoint: cloudEndpoint.value,
+      region: cloudRegion.value || 'auto',
+      bucket: cloudBucket.value,
+      accessKey: cloudAccessKey.value,
+      secretKey: cloudSecretKey.value,
+      publicUrlBase: cloudPublicUrl.value || undefined,
+    });
+    cloudStatus.value = ok ? '✅ 连接成功，密钥有效' : '❌ 连接失败，请检查配置';
+    cloudStatusOk.value = ok;
+  } catch (e: any) {
+    cloudStatus.value = `❌ 连接异常：${e?.message || e}`;
+    cloudStatusOk.value = false;
+  } finally {
+    cloudTesting.value = false;
+  }
+}
+
 function saveSettings() {
   $q.localStorage.set('supabaseUrl', supabaseUrl.value);
   $q.localStorage.set('supabaseAnonKey', supabaseAnonKey.value);
@@ -192,6 +254,23 @@ function saveSettings() {
   $q.localStorage.set('aiEndpoint', aiEndpoint.value);
   $q.localStorage.set('aiModel', aiModel.value);
   $q.localStorage.set('aiApiKey', aiApiKey.value);
+  $q.localStorage.set('cloudEndpoint', cloudEndpoint.value);
+  $q.localStorage.set('cloudRegion', cloudRegion.value);
+  $q.localStorage.set('cloudBucket', cloudBucket.value);
+  $q.localStorage.set('cloudAccessKey', cloudAccessKey.value);
+  $q.localStorage.set('cloudSecretKey', cloudSecretKey.value);
+  $q.localStorage.set('cloudPublicUrl', cloudPublicUrl.value);
+  // Init cloud store immediately (no restart needed)
+  if (cloudEndpoint.value && cloudBucket.value && cloudAccessKey.value && cloudSecretKey.value) {
+    initCloudStore({
+      endpoint: cloudEndpoint.value,
+      region: cloudRegion.value || 'auto',
+      bucket: cloudBucket.value,
+      accessKey: cloudAccessKey.value,
+      secretKey: cloudSecretKey.value,
+      publicUrlBase: cloudPublicUrl.value || undefined,
+    });
+  }
   $q.notify({ type: 'positive', message: '设置已保存', timeout: 1500 });
 }
 </script>

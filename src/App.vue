@@ -9,6 +9,7 @@ import { initSupabaseFromStorage, restoreSession } from '@/services/supabase';
 import { startSync } from '@/services/syncService';
 import { getDb } from '@/services/db';
 import { initMobileFs } from '@/services/mobileFs';
+import { initCloudStoreFromStorage } from '@/services/cloudStore';
 
 const $q = useQuasar();
 
@@ -19,6 +20,7 @@ onMounted(async () => {
   }
 
   initMobileFs(); // Initialize Capacitor Filesystem (no-op on non-mobile)
+  initCloudStoreFromStorage();
 
   initSupabaseFromStorage();
   restoreSession(); // fire-and-forget: session not needed for startup
