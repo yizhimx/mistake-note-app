@@ -26,19 +26,16 @@
     <div class="text-weight-medium q-mb-sm">知识点概要</div>
     <q-input v-model="summary" outlined dense autogrow type="textarea" placeholder="简要概述本笔记的核心知识点..." class="q-mb-md" />
 
-    <q-tabs v-model="editorTab" class="q-mb-md">
-      <q-tab name="edit" label="编辑" />
-      <q-tab name="preview" label="预览" />
-    </q-tabs>
-
-      <q-tab-panels v-model="editorTab" animated>
-        <q-tab-panel name="edit">
-          <q-input v-model="content" type="textarea" label="Markdown 详细内容" outlined autogrow :input-style="{ minHeight: '300px', fontFamily: 'monospace' }" />
-        </q-tab-panel>
-        <q-tab-panel name="preview">
-          <div class="markdown-preview markdown-body" v-html="renderedContent" />
-        </q-tab-panel>
-      </q-tab-panels>
+    <div class="row q-col-gutter-sm" style="min-height:400px">
+      <div class="col-12 col-md-6">
+        <div class="text-caption text-grey q-mb-xs">编辑</div>
+        <q-input v-model="content" type="textarea" label="Markdown 详细内容" outlined autogrow :input-style="{ minHeight: '380px', fontFamily: 'monospace' }" class="fit" />
+      </div>
+      <div class="col-12 col-md-6">
+        <div class="text-caption text-grey q-mb-xs">预览</div>
+        <div class="markdown-preview markdown-body" v-html="renderedContent" style="min-height:380px;border:1px solid #ddd;border-radius:4px;padding:12px;overflow-y:auto" />
+      </div>
+    </div>
 
     <q-separator class="q-my-md" />
 
@@ -105,7 +102,6 @@ const chapter = ref('');
 const section = ref('');
 const summary = ref('');
 const content = ref('');
-const editorTab = ref('edit');
 const saving = ref(false);
 const showLinkMistakeDialog = ref(false);
 const mistakeSearch = ref('');

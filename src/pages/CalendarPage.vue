@@ -11,10 +11,10 @@
 
     <div class="row q-mb-md" v-show="showFilter">
       <div class="col-12 col-md-4 q-pr-md q-mb-sm q-mb-md-none">
-        <q-select v-model="filters.subject" :options="subjects" label="科目" multiple use-chips clearable outlined dense />
+        <q-select v-model="filters.subject" :options="subjects" label="科目" multiple use-chips clearable outlined dense @clear="filters.subject = []" />
       </div>
       <div class="col-12 col-md-4 q-pr-md q-mb-sm q-mb-md-none">
-        <q-select v-model="filters.difficulty" :options="difficulties" label="难度" multiple use-chips clearable outlined dense />
+        <q-select v-model="filters.difficulty" :options="difficulties" label="难度" multiple use-chips clearable outlined dense @clear="filters.difficulty = []" />
       </div>
       <div class="col-12 col-md-4 q-mb-sm q-mb-md-none">
         <q-btn label="应用" color="primary" unelevated class="full-width" @click="$q.notify({ type: 'info', message: '已应用筛选', timeout: 1000 })" />

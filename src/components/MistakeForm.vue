@@ -94,8 +94,8 @@
 
         <div class="col-12 col-md-4">
           <div class="text-weight-medium q-mb-sm">实时预览</div>
-          <div class="rounded-borders bg-grey-1 q-pa-sm" style="min-height: 200px; max-height: calc(100vh - 300px); overflow-y: auto; border: 1px solid #ddd">
-            <div class="markdown-preview" v-html="renderedPreview" />
+          <div class="rounded-borders q-pa-sm" style="min-height: 200px; max-height: calc(100vh - 300px); overflow-y: auto; border: 1px solid #ddd">
+            <div class="markdown-preview markdown-body" v-html="renderedPreview" />
           </div>
           <q-separator class="q-my-md" />
           <q-btn color="primary" :label="mode === 'add' ? '保存错题' : '保存修改'" :disable="!canSave" :loading="saving" @click="saveForm" unelevated class="full-width" />
@@ -167,7 +167,7 @@ const paperTypes = ['月考', '期中', '期末', '模拟', '高考真题', '竞
 const subjectKnowledgeAreas: Record<string, string[]> = {
   '数学': ['代数', '几何', '函数', '概率统计', '数列', '三角', '向量', '解析几何', '立体几何', '其他'],
   '物理': ['力学', '热学', '电磁学', '光学', '原子物理', '其他'],
-  '化学': ['无机化学', '有机化学', '物理化学', '分析化学', '其他'],
+  '化学': ['基本概念', '元素化合物', '反应原理', '结构', '有机', '实验'],
   '英语': ['语法', '词汇', '阅读', '完形填空', '写作', '听力', '其他'],
   '语文': ['现代文阅读', '古诗文', '作文', '语言运用', '其他'],
   '生物': ['细胞生物学', '遗传学', '生态学', '进化', '其他'],

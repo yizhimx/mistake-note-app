@@ -5,6 +5,21 @@ import { getCachedImage, preloadFromMarkdown, resolveImageRef } from '@/services
 
 const PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
+const CODE_BLOCK_RE = /(```[\s\S]*?```|`[^`\n]+?`)/g;
+
+function protectCode(text: string): [string, string[]] {
+  const blocks: string[] = [];
+  const result = text.replace(CODE_BLOCK_RE, (m) => {
+    blocks.push(m);
+    return `\x00KATEX_PROTECT_${blocks.length - 1}\x00`;
+  });
+  return [result, blocks];
+}
+
+function restoreCode(text: string, blocks: string[]): string {
+  return text.replace(/\x00KATEX_PROTECT_(\d+)\x00/g, (_, i) => blocks[Number(i)]);
+}
+
 function renderKatex(text: string): string {
   // Handle \(...\) inline math (common in AI/OCR output)
   let result = text.replace(/\\\(([\s\S]*?)\\\)/g, (_m: string, math: string) => {
@@ -42,8 +57,10 @@ marked.setOptions({
 
 export function renderMarkdown(text: string): string {
   const resolved = resolveImages(text);
-  const processed = renderKatex(resolved);
-  const html = marked.parse(processed) as string;
+  const [protectedText, codeBlocks] = protectCode(resolved);
+  const processed = renderKatex(protectedText);
+  const restored = restoreCode(processed, codeBlocks);
+  const html = marked.parse(restored) as string;
   return html;
 }
 

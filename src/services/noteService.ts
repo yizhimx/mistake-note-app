@@ -70,7 +70,7 @@ const NOTE_COLS = [
 export async function addNote(r: NoteRecord): Promise<void> {
   const db = await getDb();
   await db.run(
-    `INSERT INTO notes (${NOTE_COLS.join(', ')}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO notes (${NOTE_COLS.join(', ')}) VALUES (${NOTE_COLS.map(() => '?').join(', ')})`,
     toDbRow(r),
   );
   saveDb();
