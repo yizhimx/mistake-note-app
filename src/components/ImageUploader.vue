@@ -18,7 +18,7 @@
 
     <div class="row q-gutter-sm q-mb-sm">
       <div v-for="(img, idx) in images" :key="idx" class="col-3 col-md-2 relative-position">
-        <q-img :src="img.url" style="height: 80px" class="rounded-borders" />
+        <q-img :src="img.url" style="height: 80px" class="rounded-borders cursor-pointer" @click="previewIndex = idx" />
         <q-btn
           flat round dense size="sm"
           icon="close"
@@ -31,11 +31,14 @@
     <div class="text-caption text-grey q-mb-md">
       已选 {{ images.length }} 张
     </div>
+
+    <ImagePreviewDialog v-model="showPreview" :images="imageUrls" :initial-index="previewIndex" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
+import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue';
 
 interface ImageItem {
   file: File;
@@ -45,6 +48,10 @@ interface ImageItem {
 const images = ref<ImageItem[]>([]);
 const dragOver = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
+const showPreview = ref(false);
+const previewIndex = ref(0);
+
+const imageUrls = computed(() => images.value.map(img => img.url));
 
 const emit = defineEmits<{
   change: [files: File[]];

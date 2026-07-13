@@ -13,6 +13,15 @@
             <q-toggle v-model="darkMode" @update:model-value="toggleDark" />
           </q-item-section>
         </q-item>
+        <q-item>
+          <q-item-section>
+            <q-item-label>图片压缩</q-item-label>
+            <q-item-label caption>上传前压缩至最大宽度 1200px，质量 80%</q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <q-toggle v-model="compressImages" />
+          </q-item-section>
+        </q-item>
       </q-card-section>
     </q-card>
 
@@ -105,6 +114,7 @@ import { testConnection as testCloud, initCloudStore } from '@/services/cloudSto
 const $q = useQuasar();
 
 const darkMode = ref(false);
+const compressImages = ref(true);
 const showKey = ref(false);
 
 const supabaseUrl = ref('');
@@ -137,6 +147,7 @@ const cloudReady = computed(() => !!cloudEndpoint.value && !!cloudBucket.value &
 
 onMounted(async () => {
   darkMode.value = $q.dark.isActive;
+  compressImages.value = $q.localStorage.getItem('compressImages') !== 'false';
   supabaseUrl.value = $q.localStorage.getItem('supabaseUrl') as string || '';
   supabaseAnonKey.value = $q.localStorage.getItem('supabaseAnonKey') as string || '';
   ocrApiKey.value = $q.localStorage.getItem('ocrApiKey') as string || '';
@@ -246,6 +257,7 @@ async function handleTestCloud() {
 }
 
 function saveSettings() {
+  $q.localStorage.set('compressImages', compressImages.value);
   $q.localStorage.set('supabaseUrl', supabaseUrl.value);
   $q.localStorage.set('supabaseAnonKey', supabaseAnonKey.value);
   $q.localStorage.set('ocrProvider', ocrProvider.value);

@@ -1,7 +1,7 @@
 <template>
   <q-card flat bordered class="q-mb-sm" :class="{ 'cursor-pointer': clickable }" @click="onClick">
     <q-card-section horizontal>
-      <q-img v-if="coverUrl" :src="coverUrl" style="width: 100px; min-height: 100px" class="rounded-borders-left" />
+      <q-img v-if="coverUrl" :src="coverUrl" style="width: 100px; min-height: 100px" class="rounded-borders-left cursor-pointer" @click.stop="openPreview" />
       <q-card-section class="q-pt-xs col">
         <div class="text-weight-medium">{{ title }}</div>
         <div class="text-caption text-grey q-mt-xs">
@@ -28,9 +28,14 @@
       </q-card-section>
     </q-card-section>
   </q-card>
+
+  <ImagePreviewDialog v-model="showPreview" :images="[coverUrl || '']" :initial-index="0" />
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue';
+import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue';
+
 const props = defineProps<{
   title: string;
   coverUrl?: string;
@@ -48,7 +53,13 @@ const emit = defineEmits<{
   ai: [];
 }>();
 
+const showPreview = ref(false);
+
 function onClick() {
   if (props.clickable) emit('click');
+}
+
+function openPreview() {
+  if (props.coverUrl) showPreview.value = true;
 }
 </script>

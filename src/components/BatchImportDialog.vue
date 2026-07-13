@@ -24,7 +24,7 @@
 
           <div v-if="images.length > 0" class="row q-gutter-sm q-mb-md">
             <div v-for="(img, i) in images" :key="i" class="relative-position">
-              <q-img :src="img.dataUrl" style="width:120px;height:120px" fit="cover" class="rounded-borders" />
+              <q-img :src="img.dataUrl" style="width:120px;height:120px" fit="cover" class="rounded-borders cursor-pointer" @click="previewIndex = i; showPreview = true" />
               <q-btn dense flat icon="close" size="xs" class="absolute-top-right bg-white"
                 @click="images.splice(i, 1)" style="z-index:1" />
               <div class="text-caption text-center text-grey" style="width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
@@ -141,10 +141,13 @@
       </q-card-section>
     </q-card>
   </q-dialog>
+
+  <ImagePreviewDialog v-model="showPreview" :images="previewUrls" :initial-index="previewIndex" />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue';
+import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue';
 import { useQuasar, uid } from 'quasar';
 import { useNoteStore } from '@/stores/noteStore';
 import { directVisionChat, directTextChat } from '@/services/directAi';
@@ -184,6 +187,9 @@ interface GeneratedNote {
 const step = ref<'upload' | 'ocr' | 'review'>('upload');
 const images = ref<ImportImage[]>([]);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const showPreview = ref(false);
+const previewIndex = ref(0);
+const previewUrls = computed(() => images.value.map(img => img.dataUrl));
 const ocrProcessingIndex = ref(-1);
 const combinedOcrText = ref('');
 const generating = ref(false);

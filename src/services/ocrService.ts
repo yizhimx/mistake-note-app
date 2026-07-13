@@ -51,6 +51,12 @@ export async function compressToDataUrl(
 ): Promise<string> {
   const rawDataUrl = await fileToDataUrl(file);
 
+  // Check if compression is enabled in settings
+  try {
+    const enabled = localStorage.getItem('compressImages');
+    if (enabled === 'false') return rawDataUrl;
+  } catch { /* localStorage unavailable, proceed with compression */ }
+
   // Try createImageBitmap first (works on File/Blob directly in Electron/Chrome)
   try {
     const bitmap = await createImageBitmap(file);

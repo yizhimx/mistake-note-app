@@ -29,7 +29,8 @@
           >
             <img
               :src="img.dataUrl"
-              style="width:100%;height:100%;object-fit:cover;border-radius:8px;border:1px solid #ddd"
+              style="width:100%;height:100%;object-fit:cover;border-radius:8px;border:1px solid #ddd;cursor:pointer"
+              @click="previewIndex = i; showPreview = true"
             />
             <q-btn
               flat round dense icon="close" color="negative" size="sm"
@@ -53,10 +54,13 @@
       </q-card-section>
     </q-card>
   </q-dialog>
+
+  <ImagePreviewDialog v-model="showPreview" :images="previewUrls" :initial-index="previewIndex" />
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
+import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue';
 import { useQuasar } from 'quasar';
 import { compressToDataUrl } from '@/services/ocrService';
 import { useQueueStore } from '@/stores/queueStore';
@@ -68,6 +72,9 @@ const $q = useQuasar();
 const queueStore = useQueueStore();
 
 const images = ref<{ dataUrl: string }[]>([]);
+const showPreview = ref(false);
+const previewIndex = ref(0);
+const previewUrls = computed(() => images.value.map(img => img.dataUrl));
 
 function onClose(v: boolean) {
   if (!v) {
@@ -140,10 +147,6 @@ function onPaste(e: ClipboardEvent) {
   const cd = e.clipboardData;
   if (!cd) return;
   const files: File[] = [];
-  for (let i = 0; i < (cd.files?.length || 0); i++) {
-    const f = cd.files[i];
-    if (f?.type?.startsWith('image/')) files.push(f);
-  }
   for (let i = 0; i < cd.items.length; i++) {
     const item = cd.items[i];
     if (item.kind === 'file' && item.type.startsWith('image/')) {
