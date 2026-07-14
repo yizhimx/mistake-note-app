@@ -262,7 +262,7 @@ async function applyResult(item: AiQueueItem) {
         imageUrls: [],
         tags: [],
         subject: q.subject || '',
-        answer: '',
+        answer: (q as any).answer || '',
         answerImages: [],
         difficulty: q.difficulty || 0,
         knowledgePoints: [],

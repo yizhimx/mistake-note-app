@@ -206,143 +206,159 @@ async function initTables(isFreshInstall: boolean = true) {
   const versionRow = await dbWorker.get('PRAGMA user_version');
   const version = versionRow?.user_version ?? 0;
 
-  if (version === 0) {
-    // Batch: all CREATE + INDEX in ONE Comlink call
-    await dbWorker.exec(`
-      CREATE TABLE IF NOT EXISTS mistakes (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL DEFAULT '',
-        content TEXT NOT NULL DEFAULT '',
-        image_urls TEXT NOT NULL DEFAULT '[]',
-        tags TEXT NOT NULL DEFAULT '[]',
-        subject TEXT DEFAULT '',
-        notes TEXT DEFAULT '',
-        answer TEXT DEFAULT '',
-        answer_images TEXT NOT NULL DEFAULT '[]',
-        difficulty TEXT DEFAULT '0',
-        knowledge_points TEXT NOT NULL DEFAULT '[]',
-        year TEXT DEFAULT '',
-        knowledge_areas TEXT NOT NULL DEFAULT '[]',
-        source_paper_type TEXT DEFAULT '',
-        source_paper_name TEXT DEFAULT '',
-        question_number TEXT DEFAULT '',
-        ai_analysis TEXT,
-        ocr_text TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        review_count INTEGER NOT NULL DEFAULT 0,
-        last_review_at TEXT,
-        mastery_level TEXT,
-        sm2_data TEXT,
-        linked_note_ids TEXT NOT NULL DEFAULT '[]',
-        synced INTEGER NOT NULL DEFAULT 0,
-        deleted INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS notes (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL DEFAULT '',
-        subject TEXT NOT NULL DEFAULT '',
-        volume TEXT NOT NULL DEFAULT '',
-        chapter TEXT NOT NULL DEFAULT '',
-        section TEXT NOT NULL DEFAULT '',
-        summary TEXT NOT NULL DEFAULT '',
-        is_folder INTEGER NOT NULL DEFAULT 0,
-        content TEXT NOT NULL DEFAULT '',
-        plain_text TEXT NOT NULL DEFAULT '',
-        tags TEXT NOT NULL DEFAULT '[]',
-        knowledge_points TEXT NOT NULL DEFAULT '[]',
-        tips TEXT NOT NULL DEFAULT '[]',
-        image_urls TEXT NOT NULL DEFAULT '[]',
-        linked_mistake_ids TEXT NOT NULL DEFAULT '[]',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        synced INTEGER NOT NULL DEFAULT 0,
-        deleted INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL DEFAULT ''
-      );
-      -- CAUTION: When adding new columns here, also add ALTER TABLE migration below (line ~322)
-      CREATE TABLE IF NOT EXISTS ai_queue (
-        id TEXT PRIMARY KEY,
-        type TEXT NOT NULL DEFAULT 'recognition',
-        mistake_id TEXT,
-        image_data TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        result_content TEXT,
-        result_difficulty TEXT,
-        result_subject TEXT,
-        result_knowledge_areas TEXT,
-        result_questions TEXT,
-        result_knowledge_points TEXT,
-        error TEXT,
-        created_at TEXT NOT NULL,
-        processed_at TEXT
-      );
-      CREATE TABLE IF NOT EXISTS uploaded_images (
-        id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        PRIMARY KEY (id, user_id)
-      );
-      CREATE TABLE IF NOT EXISTS sync_conflicts (
-        id TEXT PRIMARY KEY,
-        entity_type TEXT NOT NULL,
-        entity_id TEXT NOT NULL,
-        local_data TEXT,
-        remote_data TEXT,
-        created_at TEXT NOT NULL,
-        resolved INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE INDEX IF NOT EXISTS idx_mistakes_created ON mistakes(created_at);
-      CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at);
-      CREATE INDEX IF NOT EXISTS idx_ai_queue_status ON ai_queue(status);
-    `);
+  let currentVersion = version;
 
-    // Only run migrations for existing DBs upgrading to v1
-    if (!isFreshInstall) {
-      const migrationCols = [
-        'ALTER TABLE mistakes ADD COLUMN content TEXT DEFAULT \'\'',
-        'ALTER TABLE mistakes ADD COLUMN answer TEXT DEFAULT \'\'',
-        'ALTER TABLE mistakes ADD COLUMN answer_images TEXT NOT NULL DEFAULT \'[]\'',
-        'ALTER TABLE mistakes ADD COLUMN difficulty TEXT DEFAULT \'0\'',
-        'ALTER TABLE mistakes ADD COLUMN knowledge_points TEXT NOT NULL DEFAULT \'[]\'',
-        'ALTER TABLE mistakes ADD COLUMN year TEXT DEFAULT \'\'',
-        'ALTER TABLE mistakes ADD COLUMN knowledge_area TEXT DEFAULT \'\'',
-        'ALTER TABLE mistakes ADD COLUMN knowledge_areas TEXT NOT NULL DEFAULT \'[]\'',
-        'ALTER TABLE mistakes ADD COLUMN source_paper_type TEXT DEFAULT \'\'',
-        'ALTER TABLE mistakes ADD COLUMN source_paper_name TEXT DEFAULT \'\'',
-        'ALTER TABLE mistakes ADD COLUMN question_number TEXT DEFAULT \'\'',
-        'ALTER TABLE notes ADD COLUMN subject TEXT DEFAULT \'\'',
-        'ALTER TABLE notes ADD COLUMN volume TEXT DEFAULT \'\'',
-        'ALTER TABLE notes ADD COLUMN chapter TEXT DEFAULT \'\'',
-        'ALTER TABLE notes ADD COLUMN section TEXT DEFAULT \'\'',
-        'ALTER TABLE notes ADD COLUMN summary TEXT DEFAULT \'\'',
-        'ALTER TABLE notes ADD COLUMN knowledge_points TEXT NOT NULL DEFAULT \'[]\'',
-        'ALTER TABLE notes ADD COLUMN tips TEXT NOT NULL DEFAULT \'[]\'',
-        'ALTER TABLE notes ADD COLUMN is_folder INTEGER NOT NULL DEFAULT 0',
-        'ALTER TABLE ai_queue ADD COLUMN result_subject TEXT',
-        'ALTER TABLE ai_queue ADD COLUMN result_knowledge_areas TEXT',
-        'ALTER TABLE ai_queue ADD COLUMN result_questions TEXT',
-        'ALTER TABLE mistakes ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0',
-        'ALTER TABLE notes ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0',
+  // Loop: run all pending migrations in a single app start
+  while (currentVersion < 4) {
+    if (currentVersion === 0) {
+      // Batch: all CREATE + INDEX in ONE Comlink call
+      await dbWorker.exec(`
+        CREATE TABLE IF NOT EXISTS mistakes (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL DEFAULT '',
+          content TEXT NOT NULL DEFAULT '',
+          image_urls TEXT NOT NULL DEFAULT '[]',
+          tags TEXT NOT NULL DEFAULT '[]',
+          subject TEXT DEFAULT '',
+          notes TEXT DEFAULT '',
+          answer TEXT DEFAULT '',
+          answer_images TEXT NOT NULL DEFAULT '[]',
+          difficulty TEXT DEFAULT '0',
+          knowledge_points TEXT NOT NULL DEFAULT '[]',
+          year TEXT DEFAULT '',
+          knowledge_areas TEXT NOT NULL DEFAULT '[]',
+          source_paper_type TEXT DEFAULT '',
+          source_paper_name TEXT DEFAULT '',
+          question_number TEXT DEFAULT '',
+          ai_analysis TEXT,
+          ocr_text TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          review_count INTEGER NOT NULL DEFAULT 0,
+          last_review_at TEXT,
+          mastery_level TEXT,
+          sm2_data TEXT,
+          linked_note_ids TEXT NOT NULL DEFAULT '[]',
+          synced INTEGER NOT NULL DEFAULT 0,
+          deleted INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS notes (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL DEFAULT '',
+          subject TEXT NOT NULL DEFAULT '',
+          volume TEXT NOT NULL DEFAULT '',
+          chapter TEXT NOT NULL DEFAULT '',
+          section TEXT NOT NULL DEFAULT '',
+          summary TEXT NOT NULL DEFAULT '',
+          is_folder INTEGER NOT NULL DEFAULT 0,
+          content TEXT NOT NULL DEFAULT '',
+          plain_text TEXT NOT NULL DEFAULT '',
+          tags TEXT NOT NULL DEFAULT '[]',
+          knowledge_points TEXT NOT NULL DEFAULT '[]',
+          tips TEXT NOT NULL DEFAULT '[]',
+          image_urls TEXT NOT NULL DEFAULT '[]',
+          linked_mistake_ids TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          synced INTEGER NOT NULL DEFAULT 0,
+          deleted INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS ai_queue (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL DEFAULT 'recognition',
+          mistake_id TEXT,
+          image_data TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          result_content TEXT,
+          result_difficulty TEXT,
+          result_subject TEXT,
+          result_knowledge_areas TEXT,
+          result_questions TEXT,
+          result_knowledge_points TEXT,
+          error TEXT,
+          created_at TEXT NOT NULL,
+          processed_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS uploaded_images (
+          id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          PRIMARY KEY (id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS sync_conflicts (
+          id TEXT PRIMARY KEY,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          local_data TEXT,
+          remote_data TEXT,
+          created_at TEXT NOT NULL,
+          resolved INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_mistakes_created ON mistakes(created_at);
+        CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_ai_queue_status ON ai_queue(status);
+      `);
+
+      // Only run migrations for existing DBs upgrading to v1
+      if (!isFreshInstall) {
+        const migrationCols = [
+          'ALTER TABLE mistakes ADD COLUMN content TEXT DEFAULT \'\'',
+          'ALTER TABLE mistakes ADD COLUMN answer TEXT DEFAULT \'\'',
+          'ALTER TABLE mistakes ADD COLUMN answer_images TEXT NOT NULL DEFAULT \'[]\'',
+          'ALTER TABLE mistakes ADD COLUMN difficulty TEXT DEFAULT \'0\'',
+          'ALTER TABLE mistakes ADD COLUMN knowledge_points TEXT NOT NULL DEFAULT \'[]\'',
+          'ALTER TABLE mistakes ADD COLUMN year TEXT DEFAULT \'\'',
+          'ALTER TABLE mistakes ADD COLUMN knowledge_area TEXT DEFAULT \'\'',
+          'ALTER TABLE mistakes ADD COLUMN knowledge_areas TEXT NOT NULL DEFAULT \'[]\'',
+          'ALTER TABLE mistakes ADD COLUMN source_paper_type TEXT DEFAULT \'\'',
+          'ALTER TABLE mistakes ADD COLUMN source_paper_name TEXT DEFAULT \'\'',
+          'ALTER TABLE mistakes ADD COLUMN question_number TEXT DEFAULT \'\'',
+          'ALTER TABLE notes ADD COLUMN subject TEXT DEFAULT \'\'',
+          'ALTER TABLE notes ADD COLUMN volume TEXT DEFAULT \'\'',
+          'ALTER TABLE notes ADD COLUMN chapter TEXT DEFAULT \'\'',
+          'ALTER TABLE notes ADD COLUMN section TEXT DEFAULT \'\'',
+          'ALTER TABLE notes ADD COLUMN summary TEXT DEFAULT \'\'',
+          'ALTER TABLE notes ADD COLUMN knowledge_points TEXT NOT NULL DEFAULT \'[]\'',
+          'ALTER TABLE notes ADD COLUMN tips TEXT NOT NULL DEFAULT \'[]\'',
+          'ALTER TABLE notes ADD COLUMN is_folder INTEGER NOT NULL DEFAULT 0',
+          'ALTER TABLE ai_queue ADD COLUMN result_subject TEXT',
+          'ALTER TABLE ai_queue ADD COLUMN result_knowledge_areas TEXT',
+          'ALTER TABLE ai_queue ADD COLUMN result_questions TEXT',
+          'ALTER TABLE mistakes ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0',
+          'ALTER TABLE notes ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0',
+        ];
+        for (const col of migrationCols) {
+          try { await dbWorker.exec(col); } catch { /* column may already exist */ }
+        }
+      }
+
+      currentVersion = 1;
+    } else if (currentVersion === 1) {
+      await dbWorker.exec('CREATE TABLE IF NOT EXISTS sync_conflicts (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, local_data TEXT, remote_data TEXT, created_at TEXT NOT NULL, resolved INTEGER NOT NULL DEFAULT 0);');
+      currentVersion = 2;
+    } else if (currentVersion === 2) {
+      try { await dbWorker.exec("ALTER TABLE ai_queue ADD COLUMN type TEXT NOT NULL DEFAULT 'recognition'"); } catch { /* column may already exist */ }
+      currentVersion = 3;
+    } else if (currentVersion === 3) {
+      // Add columns that were only in the v0→v1 migration (missed by DBs that skipped version 0)
+      const missingCols = [
+        "ALTER TABLE ai_queue ADD COLUMN result_questions TEXT",
+        "ALTER TABLE ai_queue ADD COLUMN result_subject TEXT",
+        "ALTER TABLE ai_queue ADD COLUMN result_knowledge_areas TEXT",
+        "ALTER TABLE ai_queue ADD COLUMN result_knowledge_points TEXT",
       ];
-      for (const col of migrationCols) {
+      for (const col of missingCols) {
         try { await dbWorker.exec(col); } catch { /* column may already exist */ }
       }
+      currentVersion = 4;
     }
-
-    // Bump version only after all migrations succeeded
-    await dbWorker.exec('PRAGMA user_version = 1');
-  } else if (version === 1) {
-    await dbWorker.exec('CREATE TABLE IF NOT EXISTS sync_conflicts (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, local_data TEXT, remote_data TEXT, created_at TEXT NOT NULL, resolved INTEGER NOT NULL DEFAULT 0);');
-    await dbWorker.exec('PRAGMA user_version = 2');
-  } else if (version === 2) {
-    try { await dbWorker.exec("ALTER TABLE ai_queue ADD COLUMN type TEXT NOT NULL DEFAULT 'recognition'"); } catch { /* column may already exist */ }
-    await dbWorker.exec('PRAGMA user_version = 3');
   }
-  // Future migrations:
-  // else if (version < 3) { await dbWorker.execMulti('ALTER ... ADD COLUMN ...'); }
+
+  // Persist final version
+  await dbWorker.exec(`PRAGMA user_version = ${currentVersion}`);
 }
 
 export async function getSetting(key: string): Promise<string | null> {

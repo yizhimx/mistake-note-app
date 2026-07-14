@@ -5,6 +5,8 @@ export interface SplitQuestion {
   subject: string;
   difficulty: number;
   knowledgeAreas: string[];
+  /** AI 生成的答案/解析（识别流程新增） */
+  answer?: string;
 }
 
 export type AiQueueStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';

@@ -131,7 +131,7 @@ ${item.imageData}`;
         } catch { /* silent */ }
       }
     } else {
-      // Recognition: existing OCR flow
+      // Recognition: OCR → split → analysis → tags → apply
       const content = await recognizeText(item.imageData);
       if (!content.trim()) {
         throw new Error('OCR 未识别到题目内容，请确认图片清晰度');
@@ -142,6 +142,7 @@ ${item.imageData}`;
         let difficulty = 3;
         let subject = '';
         let knowledgeAreas: string[] = [];
+        let answer = '';
         // Try up to 2 times to get structured info from AI
         for (let attempt = 0; attempt < 2; attempt++) {
           const prompt = attempt === 0
@@ -158,9 +159,39 @@ ${item.imageData}`;
             // retry with simpler prompt
           }
         }
-        questions = [{ content, subject, difficulty, knowledgeAreas }];
+        // Generate analysis for the single question
+        try {
+          const analysisPrompt = `你是一位严谨的学科教师，请解析以下错题。返回格式：
+
+## 正确答案
+（用 Markdown 写出正确答案）
+
+## 解题步骤
+（分步骤详细说明解题过程）
+
+题目内容：
+${content}`;
+          answer = await directTextChat(analysisPrompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。' });
+        } catch { /* analysis failed, answer stays empty */ }
+        questions = [{ content, subject, difficulty, knowledgeAreas, answer }];
       } else {
         questions = await splitIntoQuestions(content);
+        // Generate analysis for each question
+        for (const q of questions) {
+          try {
+            const analysisPrompt = `你是一位严谨的学科教师，请解析以下错题。返回格式：
+
+## 正确答案
+（用 Markdown 写出正确答案）
+
+## 解题步骤
+（分步骤详细说明解题过程）
+
+题目内容：
+${q.content}`;
+            q.answer = await directTextChat(analysisPrompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。' });
+          } catch { /* analysis failed */ }
+        }
       }
 
       const first = questions[0];
@@ -180,6 +211,7 @@ ${item.imageData}`;
           const { updateMistake } = await import('@/services/mistakeService');
           await updateMistake(item.mistakeId, {
             content: first.content,
+            answer: first.answer || '',
             difficulty: first.difficulty,
             subject: first.subject,
             knowledgeAreas: first.knowledgeAreas,

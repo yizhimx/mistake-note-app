@@ -77,6 +77,7 @@
             <div class="text-weight-medium">答案 (Markdown)</div>
             <q-space />
             <q-btn flat dense no-caps icon="auto_awesome" label="AI 解析" color="purple" size="sm" @click="runAiAnalysis" />
+            <q-btn flat dense no-caps icon="image_search" label="识别答案" color="teal" size="sm" :disable="answerRecognizing" @click="runAnswerRecognize" class="q-ml-xs" />
           </div>
           <div class="toolbar q-mb-xs q-gutter-xs">
             <q-btn flat dense size="sm" icon="format_bold" @click="insertAnswerMarkdown('**', '**')" />
@@ -110,7 +111,7 @@
 import { ref, reactive, computed, watch, nextTick } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter } from 'vue-router';
-import { compressToDataUrl } from '@/services/ocrService';
+import { compressToDataUrl, recognizeText } from '@/services/ocrService';
 import { saveImage, extractImageRefs, loadImage, getCachedImage } from '@/services/imageStore';
 import { renderMarkdown } from '@/utils/markdown';
 import ImageCropDialog from '@/components/ImageCropDialog.vue';
@@ -139,6 +140,7 @@ const showCropDialog = ref(false);
 const cropImageDataUrl = ref('');
 const cropFieldTarget = ref<'content' | 'answer'>('content');
 const cropOldRef = ref('');
+const answerRecognizing = ref(false);
 
 const form = reactive({
   title: '',
@@ -514,6 +516,40 @@ async function runAiAnalysis() {
   } catch (e: any) {
     $q.notify({ type: 'negative', message: `加入队列失败：${e?.message || String(e)}`, timeout: 3000 });
   }
+}
+
+async function runAnswerRecognize() {
+  const config = getAiConfig();
+  if (!config.aiApiKey) {
+    $q.notify({ type: 'warning', message: '请先在设置中填写 AI API Key', timeout: 2500 });
+    return;
+  }
+  if (answerRecognizing.value) return;
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    answerRecognizing.value = true;
+    try {
+      const dataUrl = await compressToDataUrl(file);
+      $q.notify({ type: 'positive', message: '正在识别答案图片...', timeout: 2000 });
+      const text = await recognizeText(dataUrl);
+      form.answer = text;
+      if (text) {
+        $q.notify({ type: 'positive', message: '答案识别完成', timeout: 1500 });
+      } else {
+        $q.notify({ type: 'warning', message: '未识别到文字，请确认图片清晰度', timeout: 2500 });
+      }
+    } catch (e: any) {
+      $q.notify({ type: 'negative', message: `识别失败：${e?.message || '未知错误'}`, timeout: 3000 });
+    } finally {
+      answerRecognizing.value = false;
+    }
+  };
+  input.click();
 }
 
 function addTag() {
