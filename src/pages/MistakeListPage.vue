@@ -8,6 +8,7 @@
         <q-btn flat dense no-caps icon="select_all" :label="allSelected ? '取消全选' : '全选'" color="grey" @click="toggleSelectAll" />
         <q-btn v-if="selectedIds.length > 0" flat dense icon="file_download" color="primary" :label="`导出所选 (${selectedIds.length})`" @click="exportSelected" no-caps unelevated />
         <q-btn v-if="selectedIds.length > 0" flat dense icon="auto_awesome" color="secondary" :label="`批量识别 (${selectedIds.length})`" @click="batchRecognitionSelected" no-caps unelevated :loading="batchQueuing" :disable="batchQueuing" />
+        <q-btn v-if="selectedIds.length > 0" flat dense icon="psychology" color="primary" :label="`批量 AI 解析 (${selectedIds.length})`" @click="batchAnalysisSelected" no-caps unelevated :loading="batchAnalysisQueuing" :disable="batchAnalysisQueuing" />
         <q-btn v-if="selectedIds.length > 0" flat dense icon="delete" color="negative" :label="`删除所选 (${selectedIds.length})`" @click="batchDeleteMistakes" no-caps unelevated />
         <q-btn flat dense no-caps icon="filter_list" label="筛选" @click="showFilter = !showFilter" :color="hasActiveFilters ? 'primary' : 'grey'" />
         <q-btn v-if="hasActiveFilters" flat dense no-caps icon="clear" label="重置" color="grey" @click="clearFilters" />
@@ -64,6 +65,9 @@
           </div>
           <div class="col-12 col-md-3 q-mb-sm">
             <q-checkbox v-model="filters.noContent" label="仅显示未添加题目的" dense />
+          </div>
+          <div class="col-12 col-md-3 q-mb-sm">
+            <q-checkbox v-model="filters.noAnalysis" label="仅显示未 AI 解析的" dense />
           </div>
           <div class="col-12 col-md-3 q-mb-sm">
             <q-btn v-if="filters.noContent && filteredMistakes.length > 0" icon="auto_awesome" label="全部加入识别队列" no-caps unelevated color="primary"
@@ -185,6 +189,7 @@ const showFilter = ref(true);
 const selectedIds = ref<string[]>([]);
 const mistakeFormRef = ref<any>(null);
 const batchQueuing = ref(false);
+const batchAnalysisQueuing = ref(false);
 
 const subjects = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
 
@@ -202,6 +207,7 @@ const filters = reactive({
   content: '',
   difficulty: [] as number[],
   noContent: false,
+  noAnalysis: false,
   dateFrom: '',
   dateTo: '',
 });
@@ -324,6 +330,29 @@ async function batchRecognitionSelected() {
   }
 }
 
+async function batchAnalysisSelected() {
+  const targets = mistakeStore.mistakes.filter(m => selectedIds.value.includes(m.id));
+  if (targets.length === 0) {
+    $q.notify({ type: 'warning', message: '请先选择要解析的题目', timeout: 2500 });
+    return;
+  }
+  batchAnalysisQueuing.value = true;
+  try {
+    let count = 0;
+    for (const m of targets) {
+      if (m.content?.trim()) {
+        await queueStore.addToAnalysisQueue(m.content, m.id);
+        count++;
+      }
+    }
+    $q.notify({ type: 'positive', message: `已将 ${count} 道题目加入解析队列`, timeout: 3000 });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `批量加入队列失败：${e?.message || String(e)}`, timeout: 3500 });
+  } finally {
+    batchAnalysisQueuing.value = false;
+  }
+}
+
 function deleteMistake(id: string) {
   $q.dialog({
     title: '确认删除',
@@ -376,6 +405,9 @@ const filteredMistakes = computed(() => {
   if (filters.noContent) {
     result = result.filter(m => !m.content || !m.content.trim());
   }
+  if (filters.noAnalysis) {
+    result = result.filter(m => !m.aiAnalysis);
+  }
   if (filters.dateFrom || filters.dateTo) {
     const from = filters.dateFrom ? new Date(filters.dateFrom).getTime() : null;
     const to = filters.dateTo ? new Date(filters.dateTo).getTime() + 86400000 : null;
@@ -420,6 +452,7 @@ function clearFilters() {
   filters.content = '';
   filters.difficulty = [];
   filters.noContent = false;
+  filters.noAnalysis = false;
   filters.dateFrom = '';
   filters.dateTo = '';
   currentPage.value = 1;

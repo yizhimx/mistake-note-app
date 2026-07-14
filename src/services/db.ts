@@ -265,6 +265,7 @@ async function initTables(isFreshInstall: boolean = true) {
       );
       CREATE TABLE IF NOT EXISTS ai_queue (
         id TEXT PRIMARY KEY,
+        type TEXT NOT NULL DEFAULT 'recognition',
         mistake_id TEXT,
         image_data TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
@@ -334,6 +335,9 @@ async function initTables(isFreshInstall: boolean = true) {
   } else if (version === 1) {
     await dbWorker.exec('CREATE TABLE IF NOT EXISTS sync_conflicts (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, local_data TEXT, remote_data TEXT, created_at TEXT NOT NULL, resolved INTEGER NOT NULL DEFAULT 0);');
     await dbWorker.exec('PRAGMA user_version = 2');
+  } else if (version === 2) {
+    try { await dbWorker.exec("ALTER TABLE ai_queue ADD COLUMN type TEXT NOT NULL DEFAULT 'recognition'"); } catch { /* column may already exist */ }
+    await dbWorker.exec('PRAGMA user_version = 3');
   }
   // Future migrations:
   // else if (version < 3) { await dbWorker.execMulti('ALTER ... ADD COLUMN ...'); }

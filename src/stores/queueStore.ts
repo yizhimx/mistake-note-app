@@ -88,55 +88,82 @@ async function processQueueItem(item: AiQueueItem): Promise<void> {
 
   await updateQueueItem(item.id, { status: 'processing' });
   try {
-    // Step 1: OCR image → markdown
-    const content = await recognizeText(item.imageData);
-    if (!content.trim()) {
-      throw new Error('OCR 未识别到题目内容，请确认图片清晰度');
-    }
+    if (item.type === 'analysis') {
+      // Analysis: generate answer text from content
+      const prompt = `你是一位严谨的学科教师，请解析以下错题。返回格式：
 
-    // Step 2: Split into questions (multi-question) when not linked to a single mistake
-    let questions: SplitQuestion[];
-    if (item.mistakeId) {
-      const res = await directTextChat(buildTagsPrompt(content), { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
-      let difficulty = 3;
-      let subject = '';
-      let knowledgeAreas: string[] = [];
-      try {
-        const tags = parseTagsJson(res);
-        difficulty = tags.difficulty;
-        subject = tags.subject;
-        knowledgeAreas = tags.knowledgeAreas;
-      } catch {
-        // fallback defaults
+## 正确答案
+（用 Markdown 写出正确答案）
+
+## 解题步骤
+（分步骤详细说明解题过程）
+
+题目内容：
+${item.imageData}`;
+      const content = await directTextChat(prompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。' });
+      const text = (content || '').trim();
+      await updateQueueItem(item.id, {
+        status: 'completed',
+        resultContent: text,
+        processedAt: new Date().toISOString(),
+      });
+      // Auto-apply to mistake if linked
+      if (item.mistakeId) {
+        try {
+          const { updateMistake } = await import('@/services/mistakeService');
+          await updateMistake(item.mistakeId, { answer: text, aiAnalysis: text });
+        } catch { /* silent */ }
       }
-      questions = [{ content, subject, difficulty, knowledgeAreas }];
     } else {
-      questions = await splitIntoQuestions(content);
-    }
+      // Recognition: existing OCR flow
+      const content = await recognizeText(item.imageData);
+      if (!content.trim()) {
+        throw new Error('OCR 未识别到题目内容，请确认图片清晰度');
+      }
 
-    const first = questions[0];
-    await updateQueueItem(item.id, {
-      status: 'completed',
-      resultContent: first.content,
-      resultDifficulty: first.difficulty,
-      resultSubject: first.subject,
-      resultKnowledgeAreas: first.knowledgeAreas,
-      resultQuestions: questions,
-      processedAt: new Date().toISOString(),
-    });
+      let questions: SplitQuestion[];
+      if (item.mistakeId) {
+        const res = await directTextChat(buildTagsPrompt(content), { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
+        let difficulty = 3;
+        let subject = '';
+        let knowledgeAreas: string[] = [];
+        try {
+          const tags = parseTagsJson(res);
+          difficulty = tags.difficulty;
+          subject = tags.subject;
+          knowledgeAreas = tags.knowledgeAreas;
+        } catch {
+          // fallback defaults
+        }
+        questions = [{ content, subject, difficulty, knowledgeAreas }];
+      } else {
+        questions = await splitIntoQuestions(content);
+      }
 
-    // If linked to a mistake, auto-apply the first question
-    if (item.mistakeId) {
-      try {
-        const { updateMistake } = await import('@/services/mistakeService');
-        await updateMistake(item.mistakeId, {
-          content: first.content,
-          difficulty: first.difficulty,
-          subject: first.subject,
-          knowledgeAreas: first.knowledgeAreas,
-        });
-      } catch {
-        // silent
+      const first = questions[0];
+      await updateQueueItem(item.id, {
+        status: 'completed',
+        resultContent: first.content,
+        resultDifficulty: first.difficulty,
+        resultSubject: first.subject,
+        resultKnowledgeAreas: first.knowledgeAreas,
+        resultQuestions: questions,
+        processedAt: new Date().toISOString(),
+      });
+
+      // If linked to a mistake, auto-apply the first question
+      if (item.mistakeId) {
+        try {
+          const { updateMistake } = await import('@/services/mistakeService');
+          await updateMistake(item.mistakeId, {
+            content: first.content,
+            difficulty: first.difficulty,
+            subject: first.subject,
+            knowledgeAreas: first.knowledgeAreas,
+          });
+        } catch {
+          // silent
+        }
       }
     }
   } catch (e: any) {
@@ -173,11 +200,12 @@ export const useQueueStore = defineStore('queue', {
       }
     },
 
-    async addToQueue(imageData: string, mistakeId?: string): Promise<string> {
+    async addToQueue(imageData: string, mistakeId?: string, type: 'recognition' | 'analysis' = 'recognition'): Promise<string> {
       const id = uid();
       const now = new Date().toISOString();
       const item: AiQueueItem = {
         id,
+        type,
         mistakeId: mistakeId || null,
         imageData,
         status: 'pending',
@@ -194,6 +222,10 @@ export const useQueueStore = defineStore('queue', {
       this.items.unshift(item);
       this.tryProcessNext();
       return id;
+    },
+
+    async addToAnalysisQueue(content: string, mistakeId?: string): Promise<string> {
+      return this.addToQueue(content, mistakeId, 'analysis');
     },
 
     async cancelItem(id: string) {

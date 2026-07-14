@@ -3,7 +3,7 @@
     <div class="row items-center q-mb-md">
       <q-btn flat icon="arrow_back" label="返回" @click="$router.back()" />
       <q-space />
-      <q-btn color="primary" icon="auto_awesome" label="AI 解析" class="q-mr-sm" @click="runAiAnalysisOnDetail" />
+      
       <q-btn flat icon="more_vert" round>
         <q-menu auto-close>
           <q-list dense>
@@ -26,19 +26,7 @@
           <div class="text-h5">{{ mistake.title }}</div>
         </div>
 
-        <AIAnalysisCard
-          v-if="parsedAnalysis"
-          :analysis="parsedAnalysis"
-          class="q-mt-md"
-        />
-        <div v-else-if="mistake.aiAnalysis && !parsedAnalysis" class="q-mt-md q-pa-md bg-grey-2 rounded-borders">
-          <div class="row items-center q-mb-sm">
-            <div class="text-weight-medium">AI 分析</div>
-            <q-space />
-            <q-btn flat dense no-caps icon="edit" label="编辑" color="primary" size="sm" @click="openRawAiEditDialog" />
-          </div>
-          <div style="white-space: pre-wrap">{{ mistake.aiAnalysis }}</div>
-        </div>
+      
       </div>
 
       <div class="col-12 col-md-5 q-pl-md">
@@ -155,72 +143,9 @@
       </q-card>
     </q-dialog>
 
-    <!-- AI 原始输出编辑对话框 (JSON 解析失败时使用) -->
-    <q-dialog v-model="showRawAiEditDialog" maximized persistent>
-      <q-card class="column no-wrap" style="height:100vh">
-        <q-card-section class="row items-center q-pb-none">
-          <div>
-            <div class="text-h6">AI 分析结果编辑</div>
-            <div class="text-caption text-grey">AI 返回的内容无法自动解析为结构化数据，请手动编辑后保存。</div>
-          </div>
-          <q-space />
-          <q-btn flat round dense icon="close" @click="showRawAiEditDialog = false" />
-        </q-card-section>
-        <q-separator />
-        <q-card-section class="col scroll">
-          <div class="q-mb-sm">
-            <div class="text-weight-medium q-mb-xs">期望格式参考（JSON Schema）</div>
-            <q-input
-              :model-value="aiEditSchemaHint"
-              type="textarea"
-              outlined
-              readonly
-              dense
-              :input-style="{ fontFamily: 'monospace', fontSize: '12px', minHeight: '100px', background: '#f5f5f5' }"
-            />
-          </div>
-          <q-separator class="q-my-sm" />
-          <div>
-            <div class="text-weight-medium q-mb-xs">AI 原始输出（可编辑）</div>
-            <q-input
-              v-model="rawAiEditContent"
-              type="textarea"
-              outlined
-              autogrow
-              :input-style="{ fontFamily: 'monospace', fontSize: '13px', minHeight: '240px' }"
-              placeholder="在此编辑 AI 的输出内容..."
-            />
-          </div>
-          <div v-if="rawAiEditError" class="text-negative text-caption q-mt-sm">
-            <q-icon name="error" size="sm" /> {{ rawAiEditError }}
-          </div>
-        </q-card-section>
-        <q-separator />
-        <q-card-section class="row items-center q-py-sm" style="flex-shrink:0">
-          <q-btn flat label="取消" color="grey" @click="showRawAiEditDialog = false" />
-          <q-space />
-          <q-btn flat label="作为 Markdown 存储" color="secondary" @click="saveRawAiAsMarkdown" :loading="savingRawAi" />
-          <q-btn unelevated label="尝试重新解析为 JSON" color="primary" @click="retryParseJson" class="q-ml-sm" :loading="savingRawAi" />
-        </q-card-section>
-      </q-card>
-    </q-dialog>
+    
 
-    <q-dialog v-model="showAnalysisFixDialog" persistent>
-      <q-card style="min-width:500px;max-width:720px">
-        <q-card-section>
-          <div class="text-h6">AI 返回无法解析，请手动修正</div>
-          <div class="text-caption text-grey q-mt-xs">下方为 AI 原始输出，请修正为合法 JSON 后保存。期望结构：</div>
-          <pre class="schema-hint q-mt-xs">{{ analysisSchemaHint }}</pre>
-        </q-card-section>
-        <q-card-section>
-          <q-input v-model="fixText" type="textarea" autogrow :input-style="{ minHeight: '220px', fontFamily: 'monospace' }" />
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn flat label="取消" color="primary" @click="showAnalysisFixDialog = false" />
-          <q-btn flat label="确认保存" color="primary" :loading="savingFix" @click="confirmFix" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    
   </q-page>
 </template>
 
@@ -231,10 +156,7 @@ import { useQuasar } from 'quasar';
 import { useMistakeStore } from '@/stores/mistakeStore';
 import { useNoteStore, type NoteRecord } from '@/stores/noteStore';
 import MistakeForm from '@/components/MistakeForm.vue';
-import AIAnalysisCard from '@/components/AIAnalysisCard.vue';
 import { renderMarkdown } from '@/utils/markdown';
-import { getAiConfig } from '@/services/directAi';
-import { analyzeMistake, AnalysisParseError, parseAnalysis } from '@/services/aiService';
 
 const $q = useQuasar();
 const route = useRoute();
@@ -246,23 +168,7 @@ const showEditDialog = ref(false);
 const showLinkNoteDialog = ref(false);
 const noteSearch = ref('');
 const notesLoaded = ref(false);
-const showAnalysisFixDialog = ref(false);
-const fixText = ref('');
-const savingFix = ref(false);
 const id = route.params.id as string;
-
-// ── AI 原始输出编辑状态 ──
-const showRawAiEditDialog = ref(false);
-const rawAiEditContent = ref('');
-const rawAiEditError = ref('');
-const savingRawAi = ref(false);
-const aiEditSchemaHint = `{
-  "correctAnswer": "正确答案",
-  "steps": ["步骤1", "步骤2"],
-  "knowledgePoints": ["知识点1", "知识点2"],
-  "commonMistakes": ["常见错误1"],
-  "difficulty": 3
-}`;
 
 const mistake = computed(() => mistakeStore.getMistakeById(id));
 
@@ -274,44 +180,8 @@ const renderedAnswer = computed(() => {
   return mistake.value?.answer ? renderMarkdown(mistake.value.answer) : '';
 });
 
-const parsedAnalysis = computed(() => {
-  if (!mistake.value?.aiAnalysis) return null;
-  try {
-    const parsed = JSON.parse(mistake.value.aiAnalysis);
-    if (parsed.correctAnswer && parsed.steps) return parsed;
-  } catch { /* not JSON */ }
-  return null;
-});
-
-async function runAiAnalysisOnDetail() {
-  const m = mistake.value;
-  if (!m?.content) {
-    $q.notify({ type: 'warning', message: '请先填写题目内容', timeout: 2000 });
-    return;
-  }
-  const config = getAiConfig();
-  if (!config.aiApiKey) {
-    $q.notify({ type: 'warning', message: '请先在设置中填写 AI API Key', timeout: 2500 });
-    return;
-  }
-  const loading = $q.loading.show({ message: 'AI 解析中...' });
-  try {
-    const { analysis } = await analyzeMistake([], m.content);
-    loading();
-    await mistakeStore.updateMistake(m.id, { aiAnalysis: JSON.stringify(analysis) });
-    await mistakeStore.fetchOne(m.id);
-    $q.notify({ type: 'positive', message: 'AI 解析完成', timeout: 2000 });
-  } catch (e: any) {
-    loading();
-    if (e instanceof AnalysisParseError) {
-      fixText.value = e.rawText;
-      showAnalysisFixDialog.value = true;
-    } else {
-      $q.notify({ type: 'negative', message: `AI 解析失败：${e?.message || String(e)}`, timeout: 3000 });
-    }
-  }
-}
-
+      
+      
 const masteryLabel = computed(() => {
   const map: Record<string, string> = { fresh: '生疏', hesitant: '犹豫', smooth: '顺利' };
   return mistake.value?.masteryLevel ? map[mistake.value.masteryLevel] || '未掌握' : '未掌握';
@@ -427,109 +297,12 @@ async function deleteMistake() {
   });
 }
 
-function openRawAiEditDialog() {
-  rawAiEditContent.value = mistake.value?.aiAnalysis || '';
-  rawAiEditError.value = '';
-  showRawAiEditDialog.value = true;
-}
-
-function retryParseJson() {
-  rawAiEditError.value = '';
-  const text = rawAiEditContent.value.trim();
-  if (!text) {
-    rawAiEditError.value = '内容为空';
-    return;
-  }
-
-  // Try to extract JSON from the text
-  let cleaned = text;
-  const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch && jsonMatch[1]) {
-    cleaned = jsonMatch[1].trim();
-  }
-
-  try {
-    const parsed = JSON.parse(cleaned);
-    if (parsed.correctAnswer && parsed.steps) {
-      saveParsedAnalysis(parsed);
-      return;
-    }
-    rawAiEditError.value = 'JSON 已解析，但缺少必要字段（需要 correctAnswer 和 steps）';
-  } catch {
-    const braceStart = cleaned.indexOf('{');
-    const braceEnd = cleaned.lastIndexOf('}');
-    if (braceStart !== -1 && braceEnd !== -1) {
-      try {
-        const parsed = JSON.parse(cleaned.slice(braceStart, braceEnd + 1));
-        if (parsed.correctAnswer && parsed.steps) {
-          saveParsedAnalysis(parsed);
-          return;
-        }
-        rawAiEditError.value = 'JSON 已解析，但缺少必要字段（需要 correctAnswer 和 steps）';
-      } catch {
-        rawAiEditError.value = '无法解析为 JSON，请检查格式后重试，或选择"作为 Markdown 存储"';
-      }
-    } else {
-      rawAiEditError.value = '未找到 JSON 对象，请确保内容包含 { ... } 结构';
-    }
-  }
-}
-
-async function saveParsedAnalysis(parsed: any) {
-  savingRawAi.value = true;
-  try {
-    await mistakeStore.updateMistake(id, { aiAnalysis: JSON.stringify(parsed) });
-    await mistakeStore.fetchOne(id);
-    showRawAiEditDialog.value = false;
-    $q.notify({ type: 'positive', message: 'AI 分析已保存为结构化数据', timeout: 2000 });
-  } catch (e: any) {
-    rawAiEditError.value = `保存失败：${e?.message || String(e)}`;
-  } finally {
-    savingRawAi.value = false;
-  }
-}
-
-async function saveRawAiAsMarkdown() {
-  savingRawAi.value = true;
-  try {
-    await mistakeStore.updateMistake(id, { aiAnalysis: rawAiEditContent.value });
-    await mistakeStore.fetchOne(id);
-    showRawAiEditDialog.value = false;
-    $q.notify({ type: 'positive', message: 'AI 分析已保存为文本', timeout: 2000 });
-  } catch (e: any) {
-    rawAiEditError.value = `保存失败：${e?.message || String(e)}`;
-  } finally {
-    savingRawAi.value = false;
-  }
-}
-
+      
 function openNote(noteId: string) {
   router.push({ name: 'note-detail', params: { id: noteId } });
 }
 
-const analysisSchemaHint = `{
-  "correctAnswer": "正确答案",
-  "steps": ["步骤1", "步骤2"],
-  "knowledgePoints": ["知识点1", "知识点2"],
-  "commonMistakes": ["常见错误1"],
-  "difficulty": 3
-}`;
-
-async function confirmFix() {
-  if (!mistake.value) return;
-  savingFix.value = true;
-  try {
-    const analysis = parseAnalysis(fixText.value);
-    await mistakeStore.updateMistake(mistake.value.id, { aiAnalysis: JSON.stringify(analysis) });
-    await mistakeStore.fetchOne(mistake.value.id);
-    showAnalysisFixDialog.value = false;
-    $q.notify({ type: 'positive', message: '已保存修正后的分析', timeout: 2000 });
-  } catch (e: any) {
-    $q.notify({ type: 'negative', message: `仍无法解析：${e?.message || String(e)}`, timeout: 3000 });
-  } finally {
-    savingFix.value = false;
-  }
-}
+      
 </script>
 
 <style scoped>
@@ -541,16 +314,5 @@ async function confirmFix() {
   border: 1px solid #ddd;
   border-radius: 4px;
 }
-.schema-hint {
-  white-space: pre-wrap;
-  word-break: break-all;
-  background: #f5f5f5;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  padding: 8px 10px;
-  font-family: monospace;
-  font-size: 12px;
-  max-height: 180px;
-  overflow: auto;
-}
+      
 </style>

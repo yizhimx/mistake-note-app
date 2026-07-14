@@ -2,7 +2,7 @@
   <q-page class="q-pa-md">
     <div class="row items-center q-mb-md">
       <div class="col">
-        <h5 class="q-my-none text-weight-medium">识别队列</h5>
+        <h5 class="q-my-none text-weight-medium">处理队列</h5>
       </div>
       <div class="col-auto q-gutter-xs">
         <q-badge color="info" class="q-px-sm q-py-xs" v-if="pendingCount > 0">
@@ -16,16 +16,24 @@
       </div>
     </div>
 
-    <div v-if="queue.items.length === 0" class="text-center q-mt-xl text-grey">
+    <q-tabs v-model="queueType" dense align="left" class="q-mb-sm" active-color="primary" indicator-color="primary">
+      <q-tab name="recognition" label="识别队列" icon="document_scanner" />
+      <q-tab name="analysis" label="解析队列" icon="psychology" />
+    </q-tabs>
+
+    <div v-if="filteredItems.length === 0" class="text-center q-mt-xl text-grey">
       <q-icon name="queue" size="64px" />
       <p class="q-mt-sm">暂无待处理项</p>
-      <p class="text-caption">在添加错题页面使用「AI 识别」截图后，任务会出现在这里</p>
+      <p class="text-caption">{{ queueType === 'recognition' ? '在添加错题页面使用「AI 识别」截图后，任务会出现在这里' : '在编辑错题页面使用「AI 解析」后，任务会出现在这里' }}</p>
     </div>
 
     <q-list bordered separator v-else>
-      <q-item v-for="item in queue.items" :key="item.id" :class="{ 'bg-grey-2': item.status === 'processing' }">
-        <q-item-section avatar>
+      <q-item v-for="item in filteredItems" :key="item.id" :class="{ 'bg-grey-2': item.status === 'processing' }">
+        <q-item-section avatar v-if="item.type === 'recognition'">
           <img :src="item.imageData" style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px;" />
+        </q-item-section>
+        <q-item-section avatar v-else>
+          <q-icon name="psychology" color="primary" size="md" />
         </q-item-section>
 
         <q-item-section clickable @click="toggleExpand(item.id)">
@@ -57,21 +65,26 @@
         <template v-if="expandedId === item.id && item.status === 'completed'">
           <q-item-section>
             <q-separator class="q-my-sm" />
-            <div
-              v-for="(q, qi) in (item.resultQuestions && item.resultQuestions.length ? item.resultQuestions : [singleResult(item)])"
-              :key="qi"
-              class="q-mb-md"
-            >
-              <div class="text-caption text-grey q-mb-xs" v-if="(item.resultQuestions?.length || 0) > 1">第 {{ qi + 1 }} 题</div>
-              <div class="markdown-preview bg-grey-1 q-pa-sm rounded-borders" style="max-height: 200px; overflow-y: auto; font-size: 13px;" v-html="renderMd(q.content || '')" />
-              <div class="q-mt-xs q-gutter-xs">
-                <q-chip v-if="q.difficulty" size="sm" icon="star" color="orange">{{ q.difficulty }} 星</q-chip>
-                <q-chip v-if="q.subject" size="sm" color="teal">{{ q.subject }}</q-chip>
-                <q-chip v-for="kp in q.knowledgeAreas" :key="kp" size="sm" color="primary">{{ kp }}</q-chip>
+            <div v-if="item.type === 'recognition'" class="q-mb-md">
+              <div
+                v-for="(q, qi) in (item.resultQuestions && item.resultQuestions.length ? item.resultQuestions : [singleResult(item)])"
+                :key="qi"
+                class="q-mb-md"
+              >
+                <div class="text-caption text-grey q-mb-xs" v-if="(item.resultQuestions?.length || 0) > 1">第 {{ qi + 1 }} 题</div>
+                <div class="markdown-preview bg-grey-1 q-pa-sm rounded-borders" style="max-height: 200px; overflow-y: auto; font-size: 13px;" v-html="renderMd(q.content || '')" />
+                <div class="q-mt-xs q-gutter-xs">
+                  <q-chip v-if="q.difficulty" size="sm" icon="star" color="orange">{{ q.difficulty }} 星</q-chip>
+                  <q-chip v-if="q.subject" size="sm" color="teal">{{ q.subject }}</q-chip>
+                  <q-chip v-for="kp in q.knowledgeAreas" :key="kp" size="sm" color="primary">{{ kp }}</q-chip>
+                </div>
+              </div>
+              <div v-if="(item.resultQuestions?.length || 0) > 1" class="text-caption text-grey q-mt-xs">
+                共 {{ item.resultQuestions!.length }} 道题，点击「应用」将一次性创建。
               </div>
             </div>
-            <div v-if="(item.resultQuestions?.length || 0) > 1" class="text-caption text-grey q-mt-xs">
-              共 {{ item.resultQuestions!.length }} 道题，点击「应用」将一次性创建。
+            <div v-else class="q-mb-md">
+              <div class="markdown-preview bg-grey-1 q-pa-sm rounded-borders" style="max-height: 300px; overflow-y: auto; font-size: 13px;" v-html="renderMd(item.resultContent || '')" />
             </div>
           </q-item-section>
         </template>
@@ -97,10 +110,15 @@ const queue = useQueueStore();
 const mistakeStore = useMistakeStore();
 
 const expandedId = ref<string | null>(null);
+const queueType = ref<'recognition' | 'analysis'>('recognition');
 
-const pendingCount = computed(() => queue.pendingCount);
-const processingCount = computed(() => queue.processingItems.length);
-const completedCount = computed(() => queue.completedItems.length);
+const filteredItems = computed(() => {
+  return queue.items.filter(i => i.type === queueType.value);
+});
+
+const pendingCount = computed(() => filteredItems.value.filter(i => i.status === 'pending').length);
+const processingCount = computed(() => filteredItems.value.filter(i => i.status === 'processing').length);
+const completedCount = computed(() => filteredItems.value.filter(i => i.status === 'completed').length);
 
 onMounted(async () => {
   await queue.fetchAll();
@@ -164,6 +182,54 @@ function singleResult(item: AiQueueItem) {
 }
 
 async function applyResult(item: AiQueueItem) {
+  if (item.type === 'analysis') {
+    if (item.mistakeId) {
+      await queue.removeItem(item.id);
+      router.push({ name: 'mistake-detail', params: { id: item.mistakeId } });
+    } else if (item.resultContent) {
+      const now = new Date().toISOString();
+      const id = uid();
+      const record = {
+        id,
+        title: (item.imageData || '').split('\n')[0]?.replace(/[#*`$]/g, '').trim().slice(0, 30) || `错题 ${now.slice(0, 10)}`,
+        content: item.imageData || '',
+        imageUrls: [],
+        tags: [],
+        subject: '',
+        answer: item.resultContent,
+        answerImages: [],
+        difficulty: 0,
+        knowledgePoints: [],
+        year: '',
+        knowledgeAreas: [],
+        sourcePaperType: '',
+        sourcePaperName: '',
+        questionNumber: '',
+        notes: '',
+        aiAnalysis: null,
+        ocrText: null,
+        createdAt: now,
+        updatedAt: now,
+        reviewCount: 0,
+        lastReviewAt: null,
+        masteryLevel: null,
+        sm2Data: null,
+        linkedNoteIds: [],
+        synced: false,
+      };
+      await addMistake(record as any);
+      await mistakeStore.fetchAll();
+      await queue.removeItem(item.id);
+      $q.notify({
+        type: 'positive',
+        message: '已创建错题',
+        timeout: 2000,
+        actions: [{ label: '查看', color: 'white', handler: () => router.push({ name: 'mistake-detail', params: { id } }) }],
+      });
+    }
+    return;
+  }
+
   const questions =
     item.resultQuestions && item.resultQuestions.length
       ? item.resultQuestions

@@ -11,6 +11,7 @@ export type AiQueueStatus = 'pending' | 'processing' | 'completed' | 'failed' | 
 
 export interface AiQueueItem {
   id: string;
+  type: 'recognition' | 'analysis';
   mistakeId: string | null;
   imageData: string;
   status: AiQueueStatus;
@@ -29,6 +30,7 @@ function toItem(row: any): AiQueueItem {
   try { areas = JSON.parse(row.result_knowledge_areas || '[]'); } catch { areas = []; }
   return {
     id: row.id,
+    type: row.type || 'recognition',
     mistakeId: row.mistake_id || null,
     imageData: row.image_data || '',
     status: row.status || 'pending',
@@ -62,10 +64,11 @@ export async function fetchQueueItem(id: string): Promise<AiQueueItem | null> {
 export async function addQueueItem(item: AiQueueItem): Promise<void> {
   const db = await getDb();
   await db.run(
-    `INSERT INTO ai_queue (id, mistake_id, image_data, status, result_content, result_difficulty, result_subject, result_knowledge_areas, result_questions, error, created_at, processed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ai_queue (id, type, mistake_id, image_data, status, result_content, result_difficulty, result_subject, result_knowledge_areas, result_questions, error, created_at, processed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       safe(item.id),
+      safe(item.type || 'recognition'),
       safe(item.mistakeId),
       safe(item.imageData),
       safe(item.status),
@@ -87,6 +90,7 @@ export async function updateQueueItem(id: string, data: Partial<AiQueueItem>): P
   const values: any[] = [];
 
   if (data.status !== undefined) { fields.push('status=?'); values.push(data.status); }
+  if (data.type !== undefined) { fields.push('type=?'); values.push(data.type); }
   if (data.resultContent !== undefined) { fields.push('result_content=?'); values.push(data.resultContent); }
   if (data.resultDifficulty !== undefined) { fields.push('result_difficulty=?'); values.push(String(data.resultDifficulty)); }
   if (data.resultSubject !== undefined) { fields.push('result_subject=?'); values.push(data.resultSubject); }

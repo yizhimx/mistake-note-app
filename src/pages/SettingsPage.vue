@@ -58,15 +58,7 @@
       </q-card-section>
     </q-card>
 
-    <q-card flat bordered class="q-mb-md">
-      <q-card-section>
-        <div class="text-h6">OCR 服务配置</div>
-        <q-select v-model="ocrProvider" :options="ocrProviders" label="服务商" outlined class="q-mt-sm" />
-        <q-input v-model="ocrApiKey" label="API Key" outlined type="password" class="q-mt-sm" />
-        <q-input v-model="ocrSecret" label="API Secret" outlined type="password" class="q-mt-sm" />
-      </q-card-section>
-    </q-card>
-
+    
     <q-card flat bordered>
       <q-card-section>
         <div class="text-h6">AI 服务配置</div>
@@ -157,11 +149,6 @@ const authLoading = ref(false);
 const sessionUser = ref<{ email?: string } | null>(null);
 const supabaseReady = computed(() => !!supabaseUrl.value && !!supabaseAnonKey.value);
 
-const ocrProvider = ref('baidu');
-const ocrProviders = ['百度云', '阿里云'];
-const ocrApiKey = ref('');
-const ocrSecret = ref('');
-
 const aiEndpoint = ref('');
 const aiModel = ref('');
 const aiApiKey = ref('');
@@ -185,8 +172,6 @@ onMounted(async () => {
   compressImages.value = $q.localStorage.getItem('compressImages') !== 'false';
   supabaseUrl.value = $q.localStorage.getItem('supabaseUrl') as string || '';
   supabaseAnonKey.value = $q.localStorage.getItem('supabaseAnonKey') as string || '';
-  ocrApiKey.value = $q.localStorage.getItem('ocrApiKey') as string || '';
-  ocrSecret.value = $q.localStorage.getItem('ocrSecret') as string || '';
   aiEndpoint.value = $q.localStorage.getItem('aiEndpoint') as string || '';
   aiModel.value = $q.localStorage.getItem('aiModel') as string || '';
   aiApiKey.value = await loadAiApiKey();
@@ -308,9 +293,6 @@ async function saveSettings() {
   $q.localStorage.set('compressImages', compressImages.value);
   $q.localStorage.set('supabaseUrl', supabaseUrl.value);
   $q.localStorage.set('supabaseAnonKey', supabaseAnonKey.value);
-  $q.localStorage.set('ocrProvider', ocrProvider.value);
-  $q.localStorage.set('ocrApiKey', ocrApiKey.value);
-  $q.localStorage.set('ocrSecret', ocrSecret.value);
   $q.localStorage.set('aiEndpoint', aiEndpoint.value);
   $q.localStorage.set('aiModel', aiModel.value);
   await storeAiApiKey(aiApiKey.value);

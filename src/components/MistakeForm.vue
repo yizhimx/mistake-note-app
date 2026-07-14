@@ -115,7 +115,6 @@ import { saveImage, extractImageRefs, loadImage, getCachedImage } from '@/servic
 import { renderMarkdown } from '@/utils/markdown';
 import ImageCropDialog from '@/components/ImageCropDialog.vue';
 import { getAiConfig } from '@/services/aiConfig';
-import { directTextChat } from '@/services/directAi';
 import { useQueueStore } from '@/stores/queueStore';
 import type { MistakeRecord } from '@/stores/mistakeStore';
 
@@ -504,50 +503,16 @@ async function runAiAnalysis() {
     return;
   }
   try {
-    const loading = $q.loading.show({ message: 'AI 解析中...' });
-    const prompt = `你是一位严谨的学科教师，请解析以下错题。返回格式：
-
-## 正确答案
-（用 Markdown 写出正确答案）
-
-## 解题步骤
-（分步骤详细说明解题过程）
-
-题目内容：
-${form.content}`;
-    const content = await directTextChat(prompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。' });
-    loading();
-    form.aiAnalysis = (content || '').trim();
-
-    if (!form.answer.trim()) {
-      form.answer = form.aiAnalysis;
-    } else {
-      const ok = await new Promise<'overwrite' | 'append' | null>(resolve => {
-        $q.dialog({
-          title: '答案已存在',
-          message: '当前答案框已有内容，请选择处理方式：',
-          options: {
-            type: 'radio',
-            model: 'append' as string,
-            items: [
-              { label: '覆盖现有答案', value: 'overwrite' },
-              { label: '追加到末尾', value: 'append' },
-            ],
-          },
-          cancel: true,
-        }).onOk((val: string) => resolve(val as 'overwrite' | 'append'))
-          .onCancel(() => resolve(null));
-      });
-      if (ok === 'overwrite') {
-        form.answer = form.aiAnalysis;
-      } else if (ok === 'append') {
-        form.answer = form.answer.trimEnd() + '\n\n---\n\n' + form.aiAnalysis;
-      }
-    }
-
-    $q.notify({ type: 'positive', message: 'AI 解析完成', timeout: 2000 });
+    const mistakeId = props.mode === 'edit' ? props.initialData?.id : undefined;
+    await queueStore.addToAnalysisQueue(form.content, mistakeId);
+    $q.notify({
+      type: 'positive',
+      message: '已加入解析队列，完成后将自动填入答案',
+      timeout: 3000,
+      actions: [{ label: '查看队列', color: 'white', handler: () => router.push({ name: 'queue-list' }) }],
+    });
   } catch (e: any) {
-    $q.notify({ type: 'negative', message: `AI 解析失败：${e?.message || String(e)}`, timeout: 3000 });
+    $q.notify({ type: 'negative', message: `加入队列失败：${e?.message || String(e)}`, timeout: 3000 });
   }
 }
 
