@@ -1,4 +1,4 @@
-import { BrowserWindow, app, ipcMain, dialog } from "electron";
+import { BrowserWindow, app, ipcMain, dialog, net } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -101,7 +101,7 @@ async function registerIpcHandlers() {
     return true;
   });
 
-  // Dumb HTTPS proxy for AI/OCR calls (renderer → IPC → main → net.fetch, no CORS).
+  // Dumb HTTPS proxy for AI/OCR calls (renderer → IPC → main → net.request, no CORS).
   ipcMain.handle("ai:request", async (_event, payload: {
     url: string;
     method?: string;
@@ -112,22 +112,41 @@ async function registerIpcHandlers() {
     if (!/^https:\/\//i.test(url)) {
       throw new Error("仅允许 HTTPS 端点");
     }
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
-      try {
-        const resp = await fetch(url, { method, headers, body, signal: controller.signal });
-        const text = await resp.text();
-        console.log('[ai:request] response:', url, resp.status, text.slice(0,100));
-        return { ok: resp.ok, status: resp.status, statusText: resp.statusText, body: text };
-      } finally {
-        clearTimeout(timeout);
-      }
-    } catch (err: any) {
-      const msg = `网络错误：${err?.cause ? `${err.cause} – ` : ''}${err?.message || String(err)}`;
-      console.error('[ai:request] failed:', url, msg);
-      throw new Error(msg);
-    }
+    return new Promise((resolve, reject) => {
+      const request = net.request({ method, url, headers });
+      const timeoutMs = 180000; // 3 minutes
+      const timeoutId = setTimeout(() => {
+        request.abort();
+        const msg = `AI 请求超时（超过 ${timeoutMs / 1000} 秒），请检查网络或稍后重试`;
+        console.error('[ai:request] timeout:', url);
+        reject(new Error(msg));
+      }, timeoutMs);
+      let responseBody = '';
+      request.on('response', (response) => {
+        clearTimeout(timeoutId);
+        response.on('data', (chunk: Buffer) => { responseBody += chunk.toString(); });
+        response.on('end', () => {
+          console.log('[ai:request] response:', url, response.statusCode, responseBody.slice(0, 100));
+          resolve({
+            ok: response.statusCode! >= 200 && response.statusCode! < 300,
+            status: response.statusCode!,
+            statusText: response.statusMessage || '',
+            body: responseBody,
+          });
+        });
+      });
+      request.on('error', (err: Error) => {
+        clearTimeout(timeoutId);
+        const isTimeout = /timeout|timed.?out|ETIMEDOUT/i.test(err.message || '');
+        const msg = isTimeout
+          ? `AI 请求超时（超过 ${timeoutMs / 1000} 秒），请检查网络或稍后重试`
+          : `网络错误：${err?.message || String(err)}`;
+        console.error('[ai:request] failed:', url, msg);
+        reject(new Error(msg));
+      });
+      if (body) request.write(body);
+      request.end();
+    });
   });
 }
 

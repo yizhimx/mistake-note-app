@@ -102,16 +102,32 @@ async function processQueueItem(item: AiQueueItem): Promise<void> {
 ${item.imageData}`;
       const content = await directTextChat(prompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。' });
       const text = (content || '').trim();
+
+      // Also extract structured info (subject, difficulty, knowledge areas) from the content
+      let subject = '';
+      let difficulty = 3;
+      let knowledgeAreas: string[] = [];
+      try {
+        const tagsRes = await directTextChat(buildTagsPrompt(item.imageData), { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
+        const tags = parseTagsJson(tagsRes);
+        subject = tags.subject;
+        difficulty = tags.difficulty;
+        knowledgeAreas = tags.knowledgeAreas;
+      } catch { /* structured info extraction failed, use defaults */ }
+
       await updateQueueItem(item.id, {
         status: 'completed',
         resultContent: text,
+        resultSubject: subject,
+        resultDifficulty: difficulty,
+        resultKnowledgeAreas: knowledgeAreas,
         processedAt: new Date().toISOString(),
       });
       // Auto-apply to mistake if linked
       if (item.mistakeId) {
         try {
           const { updateMistake } = await import('@/services/mistakeService');
-          await updateMistake(item.mistakeId, { answer: text, aiAnalysis: text });
+          await updateMistake(item.mistakeId, { answer: text, aiAnalysis: text, subject, difficulty, knowledgeAreas });
         } catch { /* silent */ }
       }
     } else {
@@ -123,17 +139,24 @@ ${item.imageData}`;
 
       let questions: SplitQuestion[];
       if (item.mistakeId) {
-        const res = await directTextChat(buildTagsPrompt(content), { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
         let difficulty = 3;
         let subject = '';
         let knowledgeAreas: string[] = [];
-        try {
-          const tags = parseTagsJson(res);
-          difficulty = tags.difficulty;
-          subject = tags.subject;
-          knowledgeAreas = tags.knowledgeAreas;
-        } catch {
-          // fallback defaults
+        // Try up to 2 times to get structured info from AI
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const prompt = attempt === 0
+            ? buildTagsPrompt(content)
+            : `请严格按以下 JSON 格式输出，不要包含任何其他文字：\n{\n  "subject": "科目",\n  "difficulty": 3,\n  "knowledgeAreas": "考点1，考点2"\n}\n\n题目内容：\n${content}`;
+          try {
+            const res = await directTextChat(prompt, { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
+            const tags = parseTagsJson(res);
+            difficulty = tags.difficulty;
+            subject = tags.subject;
+            knowledgeAreas = tags.knowledgeAreas;
+            break; // success
+          } catch {
+            // retry with simpler prompt
+          }
         }
         questions = [{ content, subject, difficulty, knowledgeAreas }];
       } else {

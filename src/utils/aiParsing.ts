@@ -26,11 +26,26 @@ ${content}`;
 
 export function parseTagsJson(text: string): ParsedTags {
   let cleaned = (text || '').trim();
+  // Remove markdown code block fences
   const m = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (m && m[1]) cleaned = m[1].trim();
+
+  // Try to extract a JSON object
   const braceStart = cleaned.indexOf('{');
   const braceEnd = cleaned.lastIndexOf('}');
-  if (braceStart !== -1 && braceEnd !== -1) cleaned = cleaned.slice(braceStart, braceEnd + 1);
+  if (braceStart !== -1 && braceEnd !== -1) {
+    cleaned = cleaned.slice(braceStart, braceEnd + 1);
+  } else {
+    // No object found — try array (AI might wrap in [])
+    const arrStart = cleaned.indexOf('[');
+    const arrEnd = cleaned.lastIndexOf(']');
+    if (arrStart !== -1 && arrEnd !== -1) {
+      const arr = JSON.parse(cleaned.slice(arrStart, arrEnd + 1));
+      if (Array.isArray(arr) && arr.length > 0) {
+        cleaned = JSON.stringify(arr[0]);
+      }
+    }
+  }
 
   const data = JSON.parse(cleaned) as { difficulty?: number; subject?: string; knowledgeAreas?: string };
   const difficulty = Math.min(5, Math.max(1, Math.round(Number(data.difficulty) || 3)));
