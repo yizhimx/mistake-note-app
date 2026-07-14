@@ -177,6 +177,7 @@ import { useMistakeStore } from '@/stores/mistakeStore';
 import { useQueueStore } from '@/stores/queueStore';
 import { loadImage } from '@/services/imageStore';
 import { buildExportHtml } from '@/utils/markdown';
+import { jsPDF } from 'jspdf';
 
 const $q = useQuasar();
 const mistakeStore = useMistakeStore();
@@ -495,12 +496,35 @@ async function exportSelected() {
       if (saved) $q.notify({ type: 'positive', message: 'PDF 已导出', timeout: 2000 });
     });
   } else {
-    const win = window.open('', '_blank');
-    if (win) {
-      win.document.write(html);
-      win.document.close();
-      win.focus();
-      setTimeout(() => win.print(), 500);
+    // Use jspdf + html2canvas for web PDF export
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    tempDiv.style.position = 'absolute';
+    tempDiv.style.left = '-9999px';
+    tempDiv.style.top = '0';
+    document.body.appendChild(tempDiv);
+    try {
+      await doc.html(tempDiv, {
+        x: 10,
+        y: 10,
+        width: 190,
+        windowWidth: 800,
+      });
+      doc.save('错题导出.pdf');
+      $q.notify({ type: 'positive', message: 'PDF 已导出', timeout: 2000 });
+    } catch (e: any) {
+      // Fallback to window.print() if jspdf fails
+      $q.notify({ type: 'warning', message: 'PDF 生成失败，尝试打印模式', timeout: 2000 });
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(html);
+        win.document.close();
+        win.focus();
+        setTimeout(() => win.print(), 500);
+      }
+    } finally {
+      document.body.removeChild(tempDiv);
     }
   }
 }
