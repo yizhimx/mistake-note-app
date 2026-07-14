@@ -263,6 +263,7 @@ async function initTables(isFreshInstall: boolean = true) {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL DEFAULT ''
       );
+      -- CAUTION: When adding new columns here, also add ALTER TABLE migration below (line ~322)
       CREATE TABLE IF NOT EXISTS ai_queue (
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL DEFAULT 'recognition',
@@ -273,6 +274,7 @@ async function initTables(isFreshInstall: boolean = true) {
         result_difficulty TEXT,
         result_subject TEXT,
         result_knowledge_areas TEXT,
+        result_questions TEXT,
         result_knowledge_points TEXT,
         error TEXT,
         created_at TEXT NOT NULL,
