@@ -6,7 +6,19 @@ let currentUser: User | null = null;
 /** Direct fetch for Supabase (no IPC proxy — Chromium network stack works, Node.js doesn't). */
 async function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const rawInput = (typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url);
-  // Fix: supabase-js v2.110.2 URL construction bugs — inserts /rest/v1 into auth, REST, or Storage URLs
+  // ── URL-correction workaround for supabase-js v2.110.2 ──────────────────────
+  // Root cause: a known bug in supabase-js v2.110.2 URL construction — the
+  // `createClient()` internals sometimes prepend /rest/v1/ onto URLs that already
+  // contain /auth/v1/, /rest/v1/, or /storage/v1/, producing malformed paths like:
+  //   /rest/v1/auth/v1/…  → corrected by first .replaceAll()
+  //   /rest/v1/rest/v1/…  → corrected by second .replaceAll()
+  //   /rest/v1/storage/v1/ → corrected by third .replaceAll()
+  //
+  // WARNING: The supabase-js dependency version is effectively PINNED to 2.110.2.
+  // Do NOT upgrade supabase-js without re-verifying these corrections — if the
+  // bug is fixed upstream the replacements become no-ops (safe) but if it is
+  // replaced by a different URL format all Supabase API calls will fail with 404
+  // "Invalid path specified in request URL" / "Object not found".
   const url = rawInput
     .replaceAll('/rest/v1/auth/v1/', '/auth/v1/')
     .replaceAll('/rest/v1/rest/v1/', '/rest/v1/')

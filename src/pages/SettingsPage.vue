@@ -81,6 +81,12 @@
       <q-card-section>
         <div class="text-h6">缤纷云存储</div>
         <div class="text-caption text-grey q-mb-sm">用于跨设备同步图片（S3 兼容存储，如 缤纷云、MinIO、AWS S3）</div>
+        <q-banner type="warning" class="q-mb-sm rounded-borders">
+          <template v-slot:avatar>
+            <q-icon name="warning" />
+          </template>
+          AccessKey/Secret 保存在本地并在浏览器中签名 S3 请求，通过 DevTools 或 XSS 可被读取。建议：配置 Bucket Policy 为限定前缀 + public-read + put-only（禁止删除），并使用专用受限凭证。
+        </q-banner>
         <q-input v-model="cloudEndpoint" label="Endpoint 地址" outlined class="q-mt-sm" placeholder="https://s3.binfen.com" />
         <q-input v-model="cloudRegion" label="Region" outlined class="q-mt-sm" placeholder="auto" />
         <q-input v-model="cloudBucket" label="Bucket 名称" outlined class="q-mt-sm" placeholder="my-images" />
@@ -99,6 +105,29 @@
       </q-card-section>
     </q-card>
 
+    <q-card flat bordered class="q-mb-md">
+      <q-card-section>
+        <div class="text-h6">同步冲突</div>
+        <div class="text-caption text-grey q-mb-sm">数量：{{ syncStore.conflictCount }}</div>
+        <q-list v-if="conflicts.length > 0" separator>
+          <q-item v-for="item in conflicts" :key="item.id">
+            <q-item-section>
+              <q-item-label>{{ item.entity_type }} · {{ item.entity_id }}</q-item-label>
+              <q-item-label caption>{{ item.created_at }}</q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <div class="row q-gutter-xs">
+                <q-btn dense outline color="primary" label="保留本地" size="sm" @click="handleResolve(item.id, 'local')" />
+                <q-btn dense outline color="secondary" label="采用云端" size="sm" @click="handleResolve(item.id, 'remote')" />
+                <q-btn dense outline color="grey" label="忽略" size="sm" @click="handleResolve(item.id, 'dismiss')" />
+              </div>
+            </q-item-section>
+          </q-item>
+        </q-list>
+        <div v-else class="text-body2 text-grey">无同步冲突</div>
+      </q-card-section>
+    </q-card>
+
     <div class="row justify-center q-mt-md">
       <q-btn color="primary" icon="save" label="保存设置" @click="saveSettings" unelevated class="full-width" style="max-width: 400px" />
     </div>
@@ -110,6 +139,9 @@ import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { createSupabaseClient, restoreSession, signIn, signUp, signOut } from '@/services/supabase';
 import { testConnection as testCloud, initCloudStore } from '@/services/cloudStore';
+import { loadAiApiKey, storeAiApiKey } from '@/services/aiConfig';
+import { getConflicts, resolveConflict, type ConflictRow } from '@/services/syncService';
+import { useSyncStore } from '@/stores/syncStore';
 
 const $q = useQuasar();
 
@@ -145,6 +177,9 @@ const cloudStatus = ref('');
 const cloudStatusOk = ref(false);
 const cloudReady = computed(() => !!cloudEndpoint.value && !!cloudBucket.value && !!cloudAccessKey.value && !!cloudSecretKey.value);
 
+const syncStore = useSyncStore();
+const conflicts = ref<ConflictRow[]>([]);
+
 onMounted(async () => {
   darkMode.value = $q.dark.isActive;
   compressImages.value = $q.localStorage.getItem('compressImages') !== 'false';
@@ -154,7 +189,7 @@ onMounted(async () => {
   ocrSecret.value = $q.localStorage.getItem('ocrSecret') as string || '';
   aiEndpoint.value = $q.localStorage.getItem('aiEndpoint') as string || '';
   aiModel.value = $q.localStorage.getItem('aiModel') as string || '';
-  aiApiKey.value = $q.localStorage.getItem('aiApiKey') as string || '';
+  aiApiKey.value = await loadAiApiKey();
   cloudEndpoint.value = $q.localStorage.getItem('cloudEndpoint') as string || '';
   cloudRegion.value = $q.localStorage.getItem('cloudRegion') as string || 'auto';
   cloudBucket.value = $q.localStorage.getItem('cloudBucket') as string || '';
@@ -169,6 +204,9 @@ onMounted(async () => {
       sessionUser.value = { email: user.email ?? undefined };
     }
   }
+
+  conflicts.value = await getConflicts();
+  await syncStore.loadConflictCount();
 });
 
 function toggleDark(val: boolean) {
@@ -256,7 +294,17 @@ async function handleTestCloud() {
   }
 }
 
-function saveSettings() {
+async function handleResolve(id: string, action: 'local' | 'remote' | 'dismiss') {
+  try {
+    await resolveConflict(id, action);
+    conflicts.value = await getConflicts();
+    await syncStore.loadConflictCount();
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `操作失败：${e?.message || e}`, timeout: 3000 });
+  }
+}
+
+async function saveSettings() {
   $q.localStorage.set('compressImages', compressImages.value);
   $q.localStorage.set('supabaseUrl', supabaseUrl.value);
   $q.localStorage.set('supabaseAnonKey', supabaseAnonKey.value);
@@ -265,7 +313,7 @@ function saveSettings() {
   $q.localStorage.set('ocrSecret', ocrSecret.value);
   $q.localStorage.set('aiEndpoint', aiEndpoint.value);
   $q.localStorage.set('aiModel', aiModel.value);
-  $q.localStorage.set('aiApiKey', aiApiKey.value);
+  await storeAiApiKey(aiApiKey.value);
   $q.localStorage.set('cloudEndpoint', cloudEndpoint.value);
   $q.localStorage.set('cloudRegion', cloudRegion.value);
   $q.localStorage.set('cloudBucket', cloudBucket.value);

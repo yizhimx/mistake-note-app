@@ -1,9 +1,21 @@
-import { getDb, saveDb } from './db';
+import { dataUrlToBlob } from '@/services/imageStore';
+import { getDb, saveDb, getSetting, setSetting } from './db';
 import { loadImage, saveImage, saveImageData, extractImageRefs } from '@/services/imageStore';
 import { isCloudStoreConfigured } from '@/services/cloudStore';
 import { useSyncStore } from '@/stores/syncStore';
 import { getSupabaseClient, getCurrentUser } from './supabase';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { useQuasar } from 'quasar';
+
+export interface ConflictRow {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  local_data: string;
+  remote_data: string;
+  created_at: string;
+  resolved: number;
+}
 
 let syncTimer: ReturnType<typeof setInterval> | null = null;
 const SYNC_INTERVAL = 30000;
@@ -193,6 +205,11 @@ async function upsertMistakeLocal(db: any, row: any) {
     await db.run('DELETE FROM mistakes WHERE id = ?', [row.id]);
     return;
   }
+  // Detect conflict: local has unsynced edits and a remote version arrived
+  const existing = await db.get('SELECT * FROM mistakes WHERE id = ?', [row.id]);
+  if (existing && existing.synced === 0) {
+    await recordConflict(db, 'mistake', row.id, existing, row);
+  }
   const fields = [
     'id','title','content','answer','image_urls','tags','subject','notes',
     'answer_images','difficulty','knowledge_points','year','knowledge_areas',
@@ -219,6 +236,11 @@ async function upsertNoteLocal(db: any, row: any) {
     await db.run('DELETE FROM notes WHERE id = ?', [row.id]);
     return;
   }
+  // Detect conflict: local has unsynced edits and a remote version arrived
+  const existing = await db.get('SELECT * FROM notes WHERE id = ?', [row.id]);
+  if (existing && existing.synced === 0) {
+    await recordConflict(db, 'note', row.id, existing, row);
+  }
   const fields = [
     'id','title','subject','volume','chapter','section','summary','is_folder',
     'content','plain_text','tags','knowledge_points','tips','image_urls',
@@ -241,17 +263,6 @@ function safeJsonParse(val: any, fallback: any): any {
   if (val === null || val === undefined) return fallback;
   if (typeof val !== 'string') return val;
   try { return JSON.parse(val); } catch { return fallback; }
-}
-
-function dataUrlToBlob(dataUrl: string): Blob {
-  const parts = dataUrl.split(',');
-  const header = parts[0] || '';
-  const base64 = parts[1] || '';
-  const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
-  const binary = atob(base64);
-  const array = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
-  return new Blob([array], { type: mime });
 }
 
 function blobToFileReader(blob: Blob): Promise<string> {
@@ -294,6 +305,9 @@ function collectImageRefsFromRecord(row: any): string[] {
  */
 async function migrateLocalToCloud() {
   if (!isCloudStoreConfigured()) return;
+  // One-time migration guard: skip if already done
+  const done = await getSetting('local_migration_done');
+  if (done) return;
   const db = await getDb();
   const tables: Array<{ name: string; textCols: string[]; jsonCols: string[] }> = [
     { name: 'mistakes', textCols: ['content', 'answer'], jsonCols: ['image_urls', 'answer_images'] },
@@ -301,7 +315,8 @@ async function migrateLocalToCloud() {
   ];
   for (const table of tables) {
     const allCols = [...table.textCols, ...table.jsonCols];
-    const rows = await db.all(`SELECT id, ${allCols.join(',')} FROM ${table.name} WHERE content LIKE '%local:%'`);
+    const where = allCols.map(c => `${c} LIKE '%local:%'`).join(' OR ');
+    const rows = await db.all(`SELECT id, ${allCols.join(',')} FROM ${table.name} WHERE ${where}`);
     for (const row of rows) {
       let changed = false;
       const updates: Record<string, string> = {};
@@ -341,6 +356,7 @@ async function migrateLocalToCloud() {
       }
     }
   }
+  await setSetting('local_migration_done', '1');
 }
 
 /** Upload a single local: ref to cloud and return the cloud: ref. */
@@ -421,4 +437,92 @@ async function downloadMissingImagesForRecord(supabase: SupabaseClient, row: any
       await db.run('INSERT OR IGNORE INTO uploaded_images (id, user_id) VALUES (?, ?)', [ref, userId]);
     }
   }
+}
+
+// ── Conflict detection & resolution ──
+
+/**
+ * Record a sync conflict: the local row has unsynced edits (synced = 0) and a
+ * remote version arrived. We still apply last-write-wins (remote overwrites local
+ * in upsertMistakeLocal/upsertNoteLocal), but we persist BOTH versions here so the
+ * user can recover the local edit via the conflict viewer in SettingsPage.
+ */
+async function recordConflict(db: any, entityType: string, entityId: string, localRow: any, remoteRow: any): Promise<void> {
+  const id = `${entityType}:${entityId}`;
+  await db.run(
+    'INSERT OR REPLACE INTO sync_conflicts (id, entity_type, entity_id, local_data, remote_data, created_at, resolved) VALUES (?, ?, ?, ?, ?, ?, 0)',
+    [id, entityType, entityId, JSON.stringify(localRow), JSON.stringify(remoteRow), new Date().toISOString()]
+  );
+  useSyncStore().addConflict();
+  try {
+    useQuasar().notify({
+      type: 'warning',
+      message: `检测到同步冲突：${entityType} ${entityId}，已保留云端版本，可在设置中手动合并`,
+      timeout: 4000,
+    });
+  } catch {
+    // useQuasar() may be unavailable outside a component context; the conflict is
+    // already recorded and counted, so a missing toast is non-fatal.
+  }
+}
+
+export async function getConflicts(): Promise<ConflictRow[]> {
+  const db = await getDb();
+  return db.all('SELECT * FROM sync_conflicts WHERE resolved = 0 ORDER BY created_at DESC');
+}
+
+/** Re-apply a previously-conflicted local row with synced = 0 so it gets pushed next. */
+async function reinsertLocal(db: any, entityType: string, localRow: any): Promise<void> {
+  if (entityType === 'mistake') {
+    const fields = [
+      'id', 'title', 'content', 'answer', 'image_urls', 'tags', 'subject', 'notes',
+      'answer_images', 'difficulty', 'knowledge_points', 'year', 'knowledge_areas',
+      'source_paper_type', 'source_paper_name', 'question_number', 'ai_analysis', 'ocr_text',
+      'created_at', 'updated_at', 'review_count', 'last_review_at', 'mastery_level',
+      'sm2_data', 'linked_note_ids', 'synced',
+    ];
+    const vals = fields.map((f) => {
+      if (f === 'synced') return 0;
+      if (f === 'difficulty') return (localRow.difficulty ?? 0).toString();
+      if (['image_urls', 'tags', 'answer_images', 'knowledge_points', 'knowledge_areas', 'linked_note_ids'].includes(f)) {
+        return JSON.stringify(localRow[f] ?? []);
+      }
+      if (f === 'sm2_data') return localRow[f] ? JSON.stringify(localRow[f]) : null;
+      if (localRow[f] === undefined || localRow[f] === null) return null;
+      return String(localRow[f]);
+    });
+    const q = fields.map(() => '?').join(',');
+    await db.run(`INSERT OR REPLACE INTO mistakes (${fields.join(',')}) VALUES (${q})`, vals);
+  } else {
+    const fields = [
+      'id', 'title', 'subject', 'volume', 'chapter', 'section', 'summary', 'is_folder',
+      'content', 'plain_text', 'tags', 'knowledge_points', 'tips', 'image_urls',
+      'linked_mistake_ids', 'created_at', 'updated_at', 'synced',
+    ];
+    const vals = fields.map((f) => {
+      if (f === 'synced') return 0;
+      if (f === 'is_folder') return localRow.is_folder ? 1 : 0;
+      if (['tags', 'knowledge_points', 'tips', 'image_urls', 'linked_mistake_ids'].includes(f)) {
+        return JSON.stringify(localRow[f] ?? []);
+      }
+      if (localRow[f] === undefined || localRow[f] === null) return null;
+      return String(localRow[f]);
+    });
+    const q = fields.map(() => '?').join(',');
+    await db.run(`INSERT OR REPLACE INTO notes (${fields.join(',')}) VALUES (${q})`, vals);
+  }
+}
+
+export async function resolveConflict(id: string, action: 'local' | 'remote' | 'dismiss'): Promise<void> {
+  const db = await getDb();
+  const row = await db.get('SELECT * FROM sync_conflicts WHERE id = ?', [id]);
+  if (!row) return;
+  if (action === 'local') {
+    const localRow = JSON.parse(row.local_data);
+    await reinsertLocal(db, row.entity_type, localRow);
+  }
+  // 'remote' and 'dismiss' need no local change (remote version is already applied for 'remote').
+  await db.run('UPDATE sync_conflicts SET resolved = 1 WHERE id = ?', [id]);
+  const countRow = await db.get('SELECT COUNT(*) as c FROM sync_conflicts WHERE resolved = 0');
+  useSyncStore().setConflictCount((countRow?.c as number) ?? 0);
 }

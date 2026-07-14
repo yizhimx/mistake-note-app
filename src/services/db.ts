@@ -35,6 +35,66 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
+const IDB_NAME = 'mistake_note';
+const IDB_STORE = 'kv';
+const IDB_VERSION = 1;
+
+async function idbGet(key: string): Promise<Uint8Array | undefined> {
+  try {
+    const db = await openIdb();
+    if (!db) return undefined;
+    return new Promise<Uint8Array | undefined>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const store = tx.objectStore(IDB_STORE);
+      const req = store.get(key);
+      req.onsuccess = () => {
+        const record = req.result;
+        if (!record) { resolve(undefined); return; }
+        const raw = record.data ?? record;
+        if (raw instanceof Uint8Array) { resolve(raw); return; }
+        if (raw instanceof ArrayBuffer) { resolve(new Uint8Array(raw)); return; }
+        if (Array.isArray(raw)) { resolve(new Uint8Array(raw)); return; }
+        resolve(undefined);
+      };
+      req.onerror = () => resolve(undefined);
+      tx.oncomplete = () => db.close();
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+async function idbSet(key: string, data: Uint8Array): Promise<void> {
+  try {
+    const db = await openIdb();
+    if (!db) return;
+    return new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const store = tx.objectStore(IDB_STORE);
+      store.put({ key, data });
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => resolve();
+    });
+  } catch {
+    // IndexedDB unavailable or quota exceeded — silently no-op
+  }
+}
+
+function openIdb(): Promise<IDBDatabase | undefined> {
+  return new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') { resolve(undefined); return; }
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: 'key' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(undefined);
+  });
+}
+
 async function loadDbFromDisk(): Promise<Uint8Array | undefined> {
   // Try Capacitor Filesystem first (mobile)
   const mobileDb = await readMobileDb();
@@ -49,7 +109,11 @@ async function loadDbFromDisk(): Promise<Uint8Array | undefined> {
       // electronAPI present but read failed
     }
   }
-  // Fallback to localStorage
+  // Prefer IndexedDB (web — much larger quota than localStorage)
+  const idbData = await idbGet(LS_KEY);
+  if (idbData) return idbData;
+
+  // Read-only fallback to localStorage for backward compatibility with old data
   const ls = localStorage.getItem(LS_KEY);
   if (ls) {
     try {
@@ -63,14 +127,14 @@ async function loadDbFromDisk(): Promise<Uint8Array | undefined> {
 }
 
 async function saveDbToDisk(data: Uint8Array): Promise<boolean> {
-  // Save to localStorage as base64 (universal fallback)
+  // Save to IndexedDB (web — much larger quota than localStorage)
   try {
-    localStorage.setItem(LS_KEY, uint8ArrayToBase64(data));
+    await idbSet(LS_KEY, data);
   } catch (e) {
-    console.warn('localStorage save failed:', e);
+    console.warn('IndexedDB save failed:', e);
   }
 
-  // Try Capacitor Filesystem (mobile) — happens after localStorage to avoid double-save issue
+  // Try Capacitor Filesystem (mobile) — happens after IndexedDB to avoid double-save issue
   const mobileWrote = await writeMobileDb(data);
 
   // Also save via Electron IPC if available (desktop)
@@ -218,6 +282,15 @@ async function initTables(isFreshInstall: boolean = true) {
         user_id TEXT NOT NULL,
         PRIMARY KEY (id, user_id)
       );
+      CREATE TABLE IF NOT EXISTS sync_conflicts (
+        id TEXT PRIMARY KEY,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        local_data TEXT,
+        remote_data TEXT,
+        created_at TEXT NOT NULL,
+        resolved INTEGER NOT NULL DEFAULT 0
+      );
       CREATE INDEX IF NOT EXISTS idx_mistakes_created ON mistakes(created_at);
       CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at);
       CREATE INDEX IF NOT EXISTS idx_ai_queue_status ON ai_queue(status);
@@ -258,9 +331,12 @@ async function initTables(isFreshInstall: boolean = true) {
 
     // Bump version only after all migrations succeeded
     await dbWorker.exec('PRAGMA user_version = 1');
+  } else if (version === 1) {
+    await dbWorker.exec('CREATE TABLE IF NOT EXISTS sync_conflicts (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, local_data TEXT, remote_data TEXT, created_at TEXT NOT NULL, resolved INTEGER NOT NULL DEFAULT 0);');
+    await dbWorker.exec('PRAGMA user_version = 2');
   }
   // Future migrations:
-  // else if (version < 2) { await dbWorker.execMulti('ALTER ... ADD COLUMN ...'); }
+  // else if (version < 3) { await dbWorker.execMulti('ALTER ... ADD COLUMN ...'); }
 }
 
 export async function getSetting(key: string): Promise<string | null> {

@@ -1,6 +1,7 @@
 import { recognizeText } from './ocrService';
 import { getAiConfig } from './aiConfig';
-import { directTextChat } from './directAi';
+import { directTextChat, directVisionChat } from './directAi';
+import { buildTagsPrompt, parseTagsJson } from '../utils/aiParsing';
 
 export interface AIAnalysisResult {
   correctAnswer: string;
@@ -8,6 +9,16 @@ export interface AIAnalysisResult {
   knowledgePoints: string[];
   commonMistakes: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
+}
+
+/** JSON 解析失败时抛出，携带 AI 原始输出以便 UI 提供手动修正对话框 */
+export class AnalysisParseError extends Error {
+  rawText: string;
+  constructor(rawText: string) {
+    super('AI 返回内容无法解析为 JSON，请手动修正');
+    this.name = 'AnalysisParseError';
+    this.rawText = rawText;
+  }
 }
 
 const ANALYSIS_PROMPT = `请分析以下错题，返回严格JSON格式（不要包裹markdown代码块）：
@@ -60,15 +71,16 @@ function extractAndFixJSON(text: string): AIAnalysisResult {
       try {
         return JSON.parse(jsonStr) as AIAnalysisResult;
       } catch {
-        throw new Error(
-          `无法解析 AI 返回结果为 JSON。原始内容：\n${text}`,
-        );
+        throw new AnalysisParseError(text);
       }
     }
-    throw new Error(
-      `无法解析 AI 返回结果为 JSON。原始内容：\n${text}`,
-    );
+    throw new AnalysisParseError(text);
   }
+}
+
+/** 供 UI 在手动修正对话框中重新解析用户编辑后的文本 */
+export function parseAnalysis(text: string): AIAnalysisResult {
+  return extractAndFixJSON(text);
 }
 
 // ============ AI 辅助录入（仿 MathCyclus，内容以 Markdown 存储） ============
@@ -82,45 +94,6 @@ export interface RecognizeResult {
   subject: string;
   /** 自动生成的知识板块标签 */
   knowledgeAreas: string[];
-}
-
-function buildTagsPrompt(content: string): string {
-  return `你是一个专业的教研专家。请分析以下题目内容，给出科目、难度星级和知识板块标签。
-
-要求：
-1. 科目：从以下列表中选择最匹配的一个（数学、物理、化学、英语、语文、生物、历史、地理、政治）。
-2. 难度星级：1 到 5 的整数（1 最简单，5 最难）。
-3. 知识板块：提取 2-4 个最核心的考点板块（中文，用中文逗号“，”分隔，例如“函数，导数”）。
-4. 必须严格以 JSON 格式输出，不要输出任何额外解释文本。
-
-格式如下：
-{
-  "subject": "数学",
-  "difficulty": 3,
-  "knowledgeAreas": "函数，导数，极值"
-}
-
-题目内容：
-${content}`;
-}
-
-function parseTagsJson(text: string): { difficulty: number; subject: string; knowledgeAreas: string[] } {
-  let cleaned = (text || '').trim();
-  const m = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (m && m[1]) cleaned = m[1].trim();
-  const braceStart = cleaned.indexOf('{');
-  const braceEnd = cleaned.lastIndexOf('}');
-  if (braceStart !== -1 && braceEnd !== -1) cleaned = cleaned.slice(braceStart, braceEnd + 1);
-
-  const data = JSON.parse(cleaned) as { difficulty?: number; subject?: string; knowledgeAreas?: string };
-  const difficulty = Math.min(5, Math.max(1, Math.round(Number(data.difficulty) || 3)));
-  const subject = String(data.subject || '').trim();
-  const knowledgeAreas = String(data.knowledgeAreas || '')
-    .split(/[，,]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 6);
-  return { difficulty, subject, knowledgeAreas };
 }
 
 /**
@@ -153,4 +126,20 @@ export async function recognizeMistakeFromImage(dataUrl: string): Promise<Recogn
     subject: tags.subject,
     knowledgeAreas: tags.knowledgeAreas,
   };
+}
+
+/**
+ * 笔记扫描识别：用视觉模型把图片转写为 Markdown（不依赖 OCR 接口，识别由 AI 完成）。
+ */
+export async function recognizeNoteFromImage(dataUrl: string): Promise<string> {
+  const config = getAiConfig();
+  if (!config.aiApiKey) {
+    throw new Error('未配置 AI API Key，请先在设置中填写');
+  }
+  const prompt = '请识别图片中的笔记或题目内容，以 Markdown 格式输出。公式用 $...$ 或 $$...$$ 表示，保留原有的层级结构、列表和重点标注。';
+  const content = await directVisionChat(prompt, dataUrl, {
+    temperature: 0.2,
+    systemPrompt: 'You are a precise document transcription assistant.',
+  });
+  return content.trim();
 }

@@ -1,3 +1,5 @@
+import { dataUrlToBlob } from '@/services/imageStore';
+
 // aws4fetch is loaded via dynamic import to avoid Vite/rolldown static resolution issues
 
 export interface CloudStoreConfig {
@@ -77,15 +79,7 @@ export function clearCloudConfig(): void {
   _config = null;
 }
 
-function dataUrlToBlob(dataUrl: string): Blob {
-  const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
-  if (!match) throw new Error('Invalid image data URL');
-  const mime = match[1] as string;
-  const binary = atob(match[2] as string);
-  const array = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
-  return new Blob([array], { type: mime });
-}
+
 
 /**
  * Upload a compressed image data URL to 缤纷云 (S3-compatible).

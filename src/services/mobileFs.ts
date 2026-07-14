@@ -17,7 +17,9 @@ export async function initMobileFs(): Promise<void> {
   try {
     await Filesystem.mkdir({ path: IMAGES_DIR, directory: Directory.Documents, recursive: true });
   } catch (e: any) {
-    if (!String(e?.message || e).includes('EXIST')) throw e;
+    // Non-fatal: saveMobileImage writes with recursive:true, so images still persist
+    // even if this pre-create fails (e.g. scoped-storage quirks on some Android versions).
+    console.warn('[mobileFs] init mkdir skipped:', e?.message || e);
   }
 }
 
@@ -34,6 +36,7 @@ export async function saveMobileImage(filename: string, dataUrl: string): Promis
       path: `${IMAGES_DIR}/${filename}`,
       data: base64,
       directory: Directory.Documents,
+      recursive: true,
     });
     return true;
   } catch (e) {

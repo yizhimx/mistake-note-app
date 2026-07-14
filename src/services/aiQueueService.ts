@@ -7,11 +7,13 @@ export interface SplitQuestion {
   knowledgeAreas: string[];
 }
 
+export type AiQueueStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
 export interface AiQueueItem {
   id: string;
   mistakeId: string | null;
   imageData: string;
-  status: 'pending' | 'processing' | 'done' | 'error';
+  status: AiQueueStatus;
   resultContent: string | null;
   resultDifficulty: number | null;
   resultSubject: string | null;

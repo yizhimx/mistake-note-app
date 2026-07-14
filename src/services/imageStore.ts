@@ -7,6 +7,19 @@ const MAX_CACHE = 200;
 const cache = new Map<string, string>();
 const PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
+/** Convert a data URL string to a Blob object. */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const comma = dataUrl.indexOf(',');
+  if (comma === -1) return new Blob([]);
+  const header = dataUrl.slice(0, comma);
+  const base64 = dataUrl.slice(comma + 1);
+  const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+  const binary = atob(base64);
+  const array = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
+  return new Blob([array], { type: mime });
+}
+
 function trimCache() {
   while (cache.size > MAX_CACHE) {
     const firstKey = cache.keys().next().value;
@@ -162,6 +175,9 @@ export async function loadImage(ref: string): Promise<string | null> {
       }
     }
   }
+  // Ref is already a directly-displayable URL (raw data: URL from a save fallback,
+  // or an http(s):// URL) — return as-is so the image still renders instead of breaking.
+  if (ref.startsWith('data:') || ref.startsWith('http')) return ref;
   return null;
 }
 
@@ -215,6 +231,9 @@ export function resolveImageRef(ref: string): string {
       } catch { /* fall through to placeholder */ }
     }
   }
+  // Already a directly-displayable URL (raw data: or http(s):) — render directly
+  // rather than showing the 1px placeholder.
+  if (ref.startsWith('data:') || ref.startsWith('http')) return ref;
   return PLACEHOLDER;
 }
 

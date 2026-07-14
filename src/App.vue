@@ -10,6 +10,7 @@ import { startSync } from '@/services/syncService';
 import { getDb } from '@/services/db';
 import { initMobileFs } from '@/services/mobileFs';
 import { initCloudStoreFromStorage } from '@/services/cloudStore';
+import { initAiConfigCache } from '@/services/aiConfig';
 
 const $q = useQuasar();
 
@@ -20,6 +21,7 @@ onMounted(async () => {
   }
 
   initMobileFs(); // Initialize Capacitor Filesystem (no-op on non-mobile)
+  await initAiConfigCache(); // Populate in-memory decrypted AI API key cache
   initCloudStoreFromStorage();
 
   initSupabaseFromStorage();

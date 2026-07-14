@@ -1,6 +1,8 @@
 // 跨平台拍照/相册选取工具
 // 移动端（Capacitor）使用原生 Camera 插件，桌面/Web 回退到 HTML input
 
+import { dataUrlToBlob } from '@/services/imageStore';
+
 export type PickResult = {
   dataUrl: string;
   file: File;
@@ -16,18 +18,6 @@ async function getCompressedFile(dataUrl: string, name: string): Promise<{ dataU
     dataUrl: compressed,
     file: new File([compressedBlob], file.name, { type: 'image/jpeg' }),
   };
-}
-
-function dataUrlToBlob(dataUrl: string): Blob {
-  const comma = dataUrl.indexOf(',');
-  if (comma === -1) return new Blob([]);
-  const header = dataUrl.slice(0, comma);
-  const base64 = dataUrl.slice(comma + 1);
-  const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
-  const binary = atob(base64);
-  const array = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
-  return new Blob([array], { type: mime });
 }
 
 /** 调用系统相机拍照 */

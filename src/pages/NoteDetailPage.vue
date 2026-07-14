@@ -26,18 +26,46 @@
     <div class="text-weight-medium q-mb-sm">知识点概要</div>
     <q-input v-model="summary" outlined dense autogrow type="textarea" placeholder="简要概述本笔记的核心知识点..." class="q-mb-md" />
 
-    <div class="row q-col-gutter-sm" style="min-height:400px">
-      <div class="col-12 col-md-6">
-        <div class="text-caption text-grey q-mb-xs">编辑</div>
-        <q-input v-model="content" type="textarea" label="Markdown 详细内容" outlined autogrow :input-style="{ minHeight: '380px', fontFamily: 'monospace' }" class="fit" />
-      </div>
-      <div class="col-12 col-md-6">
-        <div class="text-caption text-grey q-mb-xs">预览</div>
-        <div class="markdown-preview markdown-body" v-html="renderedContent" style="min-height:380px;border:1px solid #ddd;border-radius:4px;padding:12px;overflow-y:auto" />
-      </div>
-    </div>
-
     <q-separator class="q-my-md" />
+
+    <div class="text-weight-medium q-mb-sm">笔记内容</div>
+    <q-tabs v-model="inputTab" dense align="left" class="text-primary q-mb-sm" active-color="primary" indicator-color="primary">
+      <q-tab name="manual" icon="edit" label="手动录入" />
+      <q-tab name="scan" icon="document_scanner" label="扫描录入" />
+    </q-tabs>
+    <q-tab-panels v-model="inputTab" animated>
+      <q-tab-panel name="manual" class="q-pa-none">
+        <div class="row q-col-gutter-sm" style="min-height:400px">
+          <div class="col-12 col-md-6">
+            <div class="text-caption text-grey q-mb-xs">编辑</div>
+            <q-input v-model="content" type="textarea" label="Markdown 详细内容" outlined autogrow :input-style="{ minHeight: '380px', fontFamily: 'monospace' }" class="fit" />
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="text-caption text-grey q-mb-xs">预览</div>
+            <div class="markdown-preview markdown-body" v-html="renderedContent" style="min-height:380px;border:1px solid #ddd;border-radius:4px;padding:12px;overflow-y:auto" />
+          </div>
+        </div>
+      </q-tab-panel>
+      <q-tab-panel name="scan" class="q-pa-none">
+        <div class="column q-gutter-sm">
+          <div class="row q-gutter-sm">
+            <q-btn icon="photo_camera" label="拍照" color="primary" outline @click="scanImage('camera')" />
+            <q-btn icon="photo_library" label="相册" color="primary" outline @click="scanImage('gallery')" />
+          </div>
+          <div v-if="scanPreview" class="row q-gutter-sm items-start">
+            <q-img :src="scanPreview" style="max-width:160px;max-height:160px;border:1px solid #ddd;border-radius:4px" />
+            <div class="column q-gutter-xs">
+              <div class="text-caption text-grey">已选图片，点击下方按钮让 AI 识别文字并填入内容</div>
+              <q-btn label="AI 识别并填入" color="primary" :loading="scanning" @click="doRecognize" />
+              <q-btn flat label="清除" @click="clearScan" />
+            </div>
+          </div>
+          <q-linear-progress v-if="scanning" indeterminate color="primary" class="q-mt-xs" />
+          <div v-if="scanError" class="text-negative text-caption">{{ scanError }}</div>
+          <div v-if="!scanPreview" class="text-grey text-caption">拍照或选择图片后，AI 会自动识别其中的文字并填入上方内容（识别由 AI 视觉模型完成，无需 OCR 接口）。</div>
+        </div>
+      </q-tab-panel>
+    </q-tab-panels>
 
     <div>
       <div class="row items-center q-mb-sm">
@@ -88,6 +116,9 @@ import { uid } from 'quasar';
 import { useNoteStore } from '@/stores/noteStore';
 import { useMistakeStore, type MistakeRecord } from '@/stores/mistakeStore';
 import { renderMarkdown } from '@/utils/markdown';
+import { pickImage } from '@/utils/camera';
+import { recognizeNoteFromImage } from '@/services/aiService';
+import { getAiConfig } from '@/services/aiConfig';
 
 const $q = useQuasar();
 const route = useRoute();
@@ -106,6 +137,10 @@ const saving = ref(false);
 const showLinkMistakeDialog = ref(false);
 const mistakeSearch = ref('');
 const mistakesLoaded = ref(false);
+const inputTab = ref<'manual' | 'scan'>('manual');
+const scanPreview = ref('');
+const scanning = ref(false);
+const scanError = ref('');
 
 const subjects = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
 
@@ -172,6 +207,40 @@ function openLinkMistakeDialog() {
   }
   mistakeSearch.value = '';
   showLinkMistakeDialog.value = true;
+}
+
+async function scanImage(source: 'camera' | 'gallery') {
+  try {
+    const res = await pickImage(source);
+    if (res?.dataUrl) {
+      scanPreview.value = res.dataUrl;
+      scanError.value = '';
+      await doRecognize();
+    }
+  } catch (e: any) {
+    scanError.value = e?.message || String(e);
+  }
+}
+
+async function doRecognize() {
+  if (!scanPreview.value) return;
+  scanning.value = true;
+  scanError.value = '';
+  try {
+    const text = await recognizeNoteFromImage(scanPreview.value);
+    const sep = content.value.trim() ? '\n\n' : '';
+    content.value = content.value + sep + text;
+    $q.notify({ type: 'positive', message: 'AI 识别完成，已填入内容', timeout: 2000 });
+  } catch (e: any) {
+    scanError.value = e?.message || String(e);
+  } finally {
+    scanning.value = false;
+  }
+}
+
+function clearScan() {
+  scanPreview.value = '';
+  scanError.value = '';
 }
 
 async function saveNote() {
