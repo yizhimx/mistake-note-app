@@ -1,5 +1,5 @@
 import { isMobileNative, saveMobileImage, loadMobileImage, deleteMobileImage } from './mobileFs';
-import { getRefUrl, isCloudStoreConfigured, uploadImage, deleteImage as deleteCloudImage } from './cloudStore';
+import { getS3ObjectUrl, isCloudStoreConfigured, uploadImage, deleteImage as deleteCloudImage, fetchCloudResource, getSignedUrl, getCachedSignedUrl } from './cloudStore';
 
 const IMAGE_PREFIX = 'local:';
 const CLOUD_PREFIX = 'cloud:';
@@ -135,17 +135,43 @@ export async function saveImageData(ref: string, dataUrl: string): Promise<void>
 export async function loadImage(ref: string): Promise<string | null> {
   if (cache.has(ref)) return cache.get(ref)!;
 
-  // Cloud ref — download from public URL
+  // Cloud ref — try local cache first, then download from public URL
   if (ref.startsWith(CLOUD_PREFIX)) {
+    const name = ref.slice(CLOUD_PREFIX.length); // "uuid.jpg"
+
+    // 1. Try local storage (Electron or mobile) — persistent cache across sessions
+    if (window.electronAPI) {
+      const localDataUrl = await window.electronAPI.loadImage(name);
+      if (localDataUrl) {
+        cache.set(ref, localDataUrl);
+        trimCache();
+        return localDataUrl;
+      }
+    }
+    if (isMobileNative()) {
+      const localDataUrl = await loadMobileImage(name);
+      if (localDataUrl) {
+        cache.set(ref, localDataUrl);
+        trimCache();
+        return localDataUrl;
+      }
+    }
+
+    // 2. Download from cloud using signed request (avoids 403 on non-public buckets)
     if (isCloudStoreConfigured()) {
       try {
-        const publicUrl = getRefUrl(ref);
-        const resp = await fetch(publicUrl);
+        const s3Url = getS3ObjectUrl(ref);
+        const resp = await fetchCloudResource(s3Url);
         if (resp.ok) {
           const blob = await resp.blob();
           const dataUrl = await blobToDataUrl(blob);
           cache.set(ref, dataUrl);
           trimCache();
+          // Pre-cache a signed URL so resolveImageRef can use it synchronously
+          getSignedUrl(ref).catch(() => {});
+          // Save to local storage for future offline use
+          const localRef = `${IMAGE_PREFIX}${name}`;
+          await saveImageData(localRef, dataUrl).catch(() => {});
           return dataUrl;
         }
       } catch (e) {
@@ -226,9 +252,12 @@ export function resolveImageRef(ref: string): string {
     const cached = getCachedImage(ref);
     if (cached) return cached;
     if (isCloudStoreConfigured()) {
-      try {
-        return getRefUrl(ref);
-      } catch { /* fall through to placeholder */ }
+      // Try cached signed URL first (avoids 403 on non-public buckets)
+      const signedUrl = getCachedSignedUrl(ref);
+      if (signedUrl) return signedUrl;
+      // Don't return public URL here — it 403s on non-public buckets.
+      // The image will be loaded asynchronously via preloadFromMarkdown()
+      // and cached as a data URL, then Vue re-renders with the cached version.
     }
   }
   // Already a directly-displayable URL (raw data: or http(s):) — render directly

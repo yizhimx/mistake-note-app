@@ -44,7 +44,24 @@ export function getCurrentUser(): User | null {
 }
 
 export function createSupabaseClient(url: string, anonKey: string): SupabaseClient {
-  const cleanUrl = url.replace(/\/+$/, '');
+  // Normalize URL: add https:// if missing, strip trailing slash
+  let cleanUrl = (url || '').trim();
+  if (!cleanUrl) {
+    throw new Error('Supabase URL 不能为空');
+  }
+  if (!/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
+  cleanUrl = cleanUrl.replace(/\/+$/, '');
+  // Validate URL has a host
+  try {
+    const parsed = new URL(cleanUrl);
+    if (!parsed.hostname || parsed.hostname === 'null' || parsed.hostname === 'undefined') {
+      throw new Error('无效的 Supabase URL');
+    }
+  } catch {
+    throw new Error(`Supabase URL 格式无效: ${cleanUrl}`);
+  }
   client = createClient(cleanUrl, anonKey, {
     auth: { persistSession: true, autoRefreshToken: true },
     global: { fetch: supabaseFetch },
@@ -89,8 +106,12 @@ export async function signOut(): Promise<void> {
 
 /** Try to restore Supabase session from saved config in localStorage. Call on app boot. */
 export function initSupabaseFromStorage(): void {
-  const url = localStorage.getItem('supabaseUrl');
-  const key = localStorage.getItem('supabaseAnonKey');
+  // Quasar's $q.localStorage stores values with type prefix markers (__q_strn|, etc.)
+  // Use raw localStorage.getItem and strip the prefix manually.
+  const rawUrl = localStorage.getItem('supabaseUrl');
+  const url = rawUrl ? (rawUrl.startsWith('__q_strn|') ? rawUrl.slice(9) : rawUrl) : null;
+  const rawKey = localStorage.getItem('supabaseAnonKey');
+  const key = rawKey ? (rawKey.startsWith('__q_strn|') ? rawKey.slice(9) : rawKey) : null;
   if (url && key) {
     createSupabaseClient(url, key);
   }

@@ -2,6 +2,8 @@ import { dataUrlToBlob } from '@/services/imageStore';
 
 // aws4fetch is loaded via dynamic import to avoid Vite/rolldown static resolution issues
 
+const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+
 export interface CloudStoreConfig {
   endpoint: string;
   bucket: string;
@@ -56,10 +58,12 @@ function whitelistS3Origin(endpoint: string): void {
     const origin = new URL(endpoint).origin;
     const meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
     if (!meta) return;
-    const content = meta.getAttribute('content') || '';
+    let content = meta.getAttribute('content') || '';
     if (content.includes(origin)) return;
-    const updated = content.replace(/(connect-src[^;]*)/, `$1 ${origin}`);
-    meta.setAttribute('content', updated);
+    // Whitelist for both fetch (connect-src) and <img> (img-src)
+    content = content.replace(/(connect-src[^;]*)/, `$1 ${origin}`);
+    content = content.replace(/(img-src[^;]*)/, `$1 ${origin}`);
+    meta.setAttribute('content', content);
     console.log('[cloudStore] CSP whitelisted:', origin);
   } catch {
     /* invalid URL — ignore */
@@ -77,9 +81,77 @@ export function getCloudConfig(): CloudStoreConfig | null {
 export function clearCloudConfig(): void {
   _client = null;
   _config = null;
+  signedUrlCache.clear();
 }
 
+/**
+ * Fetch a resource from cloud storage using a signed request (AWS Signature V4).
+ * Uses the existing AwsClient which handles request signing automatically.
+ */
+export async function fetchCloudResource(url: string): Promise<Response> {
+  if (!_config) throw new Error('Cloud store not configured');
+  const client = await getClient();
+  return client.fetch(url);
+}
 
+/**
+ * Build the raw S3 object URL for a cloud: ref.
+ * Always uses the S3 endpoint (not publicUrlBase) so it can be signed.
+ */
+export function getS3ObjectUrl(ref: string): string {
+  if (!_config) throw new Error('Cloud store not configured');
+  const ep = _config.endpoint.replace(/\/+$/, '');
+  const uuid = ref.slice(6); // strip "cloud:"
+  return `${ep}/${_config.bucket}/images/${uuid}`;
+}
+
+/**
+ * Generate a pre-signed GET URL for a cloud: ref using AWS Signature V4 query params.
+ * The URL is valid for `ttlSeconds` (default 3600 = 1 hour).
+ * Results are cached in-memory to avoid re-signing on every access.
+ */
+export async function getSignedUrl(ref: string, ttlSeconds = 3600): Promise<string> {
+  if (!ref.startsWith('cloud:')) throw new Error(`Invalid cloud ref: ${ref}`);
+  if (!_config) throw new Error('Cloud store not configured');
+
+  // Check cache first
+  const cached = signedUrlCache.get(ref);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.url;
+  }
+
+  const { AwsV4Signer } = await import('aws4fetch');
+  const url = getS3ObjectUrl(ref);
+
+  const signer = new AwsV4Signer({
+    url,
+    method: 'GET',
+    accessKeyId: _config.accessKey,
+    secretAccessKey: _config.secretKey,
+    service: 's3',
+    region: _config.region || 'auto',
+    signQuery: true,
+  });
+
+  const signed = await signer.sign();
+  const signedUrl = signed.url.toString();
+
+  // Cache the signed URL
+  signedUrlCache.set(ref, { url: signedUrl, expiresAt: Date.now() + ttlSeconds * 1000 });
+  return signedUrl;
+}
+
+/**
+ * Synchronously retrieve a cached signed URL for a cloud: ref.
+ * Returns null if not cached or expired.
+ */
+export function getCachedSignedUrl(ref: string): string | null {
+  const cached = signedUrlCache.get(ref);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.url;
+  }
+  return null;
+}
 
 /**
  * Upload a compressed image data URL to 缤纷云 (S3-compatible).
