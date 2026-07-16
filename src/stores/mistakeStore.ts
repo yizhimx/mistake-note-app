@@ -7,6 +7,11 @@ import {
   updateMistake as dbUpdate,
   deleteMistake as dbDelete,
   searchMistakes,
+  fetchDeletedMistakes as dbFetchDeletedMistakes,
+  restoreMistake as dbRestore,
+  restoreAllMistakes as dbRestoreAll,
+  purgeMistake as dbPurge,
+  purgeAllMistakes as dbPurgeAll,
 } from '@/services/mistakeService';
 import { preloadFromMarkdown, deleteImage, extractImageRefs } from '@/services/imageStore';
 
@@ -116,6 +121,48 @@ export const useMistakeStore = defineStore('mistake', {
       }
       await dbDelete(id);
       this.mistakes = this.mistakes.filter((m) => m.id !== id);
+    },
+    async fetchDeletedMistakes() {
+      return await dbFetchDeletedMistakes();
+    },
+    async restoreMistake(id: string) {
+      await dbRestore(id);
+      const record = await fetchMistakeById(id);
+      if (record) this.mistakes.unshift(record);
+    },
+    async restoreAllMistakes() {
+      const restored = await dbRestoreAll();
+      this.mistakes.unshift(...restored);
+    },
+    async purgeMistake(id: string) {
+      const removed = this.mistakes.find(m => m.id === id);
+      if (removed) {
+        const refs = [
+          ...extractImageRefs(removed.content || ''),
+          ...extractImageRefs(removed.answer || ''),
+        ];
+        for (const ref of refs) {
+          await deleteImage(ref).catch(() => {});
+        }
+      }
+      await dbPurge(id);
+      this.mistakes = this.mistakes.filter((m) => m.id !== id);
+    },
+    async purgeAllMistakes() {
+      const purged = await dbPurgeAll();
+      const ids = new Set(purged.map(p => p.id));
+      const deletePromises: Promise<void>[] = [];
+      for (const p of purged) {
+        const refs = [
+          ...extractImageRefs(p.content || ''),
+          ...extractImageRefs(p.answer || ''),
+        ];
+        for (const ref of refs) {
+          deletePromises.push(deleteImage(ref).catch(() => {}));
+        }
+      }
+      await Promise.all(deletePromises);
+      this.mistakes = this.mistakes.filter((m) => !ids.has(m.id));
     },
     async search(params: { subject?: string; tags?: string; dateFrom?: string; dateTo?: string }) {
       this.loading = true;

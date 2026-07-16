@@ -124,3 +124,42 @@ export async function deleteNote(id: string): Promise<void> {
   await db.run('UPDATE notes SET deleted = 1, synced = 0, updated_at = ? WHERE id = ?', [now, id]);
   saveDb();
 }
+
+export async function fetchDeletedNotes(): Promise<NoteRecord[]> {
+  const db = await getDb();
+  const rows = await db.all('SELECT * FROM notes WHERE deleted = 1 ORDER BY updated_at DESC');
+  return rows.map(toDb);
+}
+
+export async function restoreNote(id: string): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.run('UPDATE notes SET deleted = 0, synced = 0, updated_at = ? WHERE id = ?', [now, id]);
+  saveDb();
+}
+
+export async function restoreAllNotes(): Promise<NoteRecord[]> {
+  const db = await getDb();
+  const rows = await db.all('SELECT * FROM notes WHERE deleted = 1');
+  const now = new Date().toISOString();
+  await db.run('UPDATE notes SET deleted = 0, synced = 0, updated_at = ? WHERE deleted = 1', [now]);
+  saveDb();
+  return rows.map(toDb);
+}
+
+export async function purgeNote(id: string): Promise<NoteRecord | null> {
+  const db = await getDb();
+  const row = await db.get('SELECT * FROM notes WHERE id = ?', [id]);
+  if (!row) return null;
+  await db.run('DELETE FROM notes WHERE id = ?', [id]);
+  saveDb();
+  return toDb(row);
+}
+
+export async function purgeAllNotes(): Promise<NoteRecord[]> {
+  const db = await getDb();
+  const rows = await db.all('SELECT * FROM notes WHERE deleted = 1');
+  await db.run('DELETE FROM notes WHERE deleted = 1');
+  saveDb();
+  return rows.map(toDb);
+}

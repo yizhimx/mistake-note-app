@@ -194,6 +194,45 @@ export async function deleteMistake(id: string): Promise<void> {
   saveDb();
 }
 
+export async function fetchDeletedMistakes(): Promise<MistakeRecord[]> {
+  const db = await getDb();
+  const rows = await db.all('SELECT * FROM mistakes WHERE deleted = 1 ORDER BY updated_at DESC');
+  return rows.map(toDb);
+}
+
+export async function restoreMistake(id: string): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.run('UPDATE mistakes SET deleted = 0, synced = 0, updated_at = ? WHERE id = ?', [now, id]);
+  saveDb();
+}
+
+export async function restoreAllMistakes(): Promise<MistakeRecord[]> {
+  const db = await getDb();
+  const rows = await db.all('SELECT * FROM mistakes WHERE deleted = 1');
+  const now = new Date().toISOString();
+  await db.run('UPDATE mistakes SET deleted = 0, synced = 0, updated_at = ? WHERE deleted = 1', [now]);
+  saveDb();
+  return rows.map(toDb);
+}
+
+export async function purgeMistake(id: string): Promise<MistakeRecord | null> {
+  const db = await getDb();
+  const row = await db.get('SELECT * FROM mistakes WHERE id = ?', [id]);
+  if (!row) return null;
+  await db.run('DELETE FROM mistakes WHERE id = ?', [id]);
+  saveDb();
+  return toDb(row);
+}
+
+export async function purgeAllMistakes(): Promise<MistakeRecord[]> {
+  const db = await getDb();
+  const rows = await db.all('SELECT * FROM mistakes WHERE deleted = 1');
+  await db.run('DELETE FROM mistakes WHERE deleted = 1');
+  saveDb();
+  return rows.map(toDb);
+}
+
 export async function searchMistakes(params: {
   subject?: string;
   tags?: string;

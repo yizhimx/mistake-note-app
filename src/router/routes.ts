@@ -42,6 +42,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/QueuePage.vue'),
       },
       {
+        path: 'recycle',
+        name: 'recycle',
+        component: () => import('@/pages/RecycleBinPage.vue'),
+      },
+      {
         path: 'settings',
         name: 'settings',
         component: () => import('@/pages/SettingsPage.vue'),

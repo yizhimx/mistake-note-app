@@ -6,7 +6,13 @@ import {
   addNotes as dbAddMany,
   updateNote as dbUpdate,
   deleteNote as dbDelete,
+  fetchDeletedNotes as dbFetchDeletedNotes,
+  restoreNote as dbRestore,
+  restoreAllNotes as dbRestoreAll,
+  purgeNote as dbPurge,
+  purgeAllNotes as dbPurgeAll,
 } from '@/services/noteService';
+import { deleteImage, extractImageRefs } from '@/services/imageStore';
 
 export interface NoteRecord {
   id: string;
@@ -82,6 +88,40 @@ export const useNoteStore = defineStore('note', {
     async removeNote(id: string) {
       await dbDelete(id);
       this.notes = this.notes.filter((n) => n.id !== id);
+    },
+    async fetchDeletedNotes() {
+      return await dbFetchDeletedNotes();
+    },
+    async restoreNote(id: string) {
+      await dbRestore(id);
+      const record = await fetchNoteById(id);
+      if (record) this.notes.unshift(record);
+    },
+    async restoreAllNotes() {
+      const restored = await dbRestoreAll();
+      this.notes.unshift(...restored);
+    },
+    async purgeNote(id: string) {
+      const removed = this.notes.find(n => n.id === id);
+      if (removed) {
+        for (const ref of removed.imageUrls) {
+          await deleteImage(ref).catch(() => {});
+        }
+      }
+      await dbPurge(id);
+      this.notes = this.notes.filter((n) => n.id !== id);
+    },
+    async purgeAllNotes() {
+      const purged = await dbPurgeAll();
+      const ids = new Set(purged.map(p => p.id));
+      const deletePromises: Promise<void>[] = [];
+      for (const p of purged) {
+        for (const ref of p.imageUrls) {
+          deletePromises.push(deleteImage(ref).catch(() => {}));
+        }
+      }
+      await Promise.all(deletePromises);
+      this.notes = this.notes.filter((n) => !ids.has(n.id));
     },
     setCurrentNote(note: NoteRecord | null) {
       this.currentNote = note;

@@ -195,6 +195,7 @@ const navLinks = [
   { label: '识别队列', icon: 'queue', to: { name: 'queue-list' } },
   { label: '笔记列表', icon: 'note_alt', to: { name: 'note-list' } },
   { label: '日历统计', icon: 'calendar_month', to: { name: 'calendar' } },
+  { label: '回收站', icon: 'restore_from_trash', to: { name: 'recycle' } },
 ];
 
 const bottomTabs = [
@@ -202,6 +203,7 @@ const bottomTabs = [
   { name: 'review', label: '回顾', icon: 'autorenew' },
   { name: 'note-list', label: '笔记', icon: 'note_alt' },
   { name: 'calendar', label: '统计', icon: 'calendar_month' },
+  { name: 'recycle', label: '回收站', icon: 'restore_from_trash' },
   { name: 'settings', label: '设置', icon: 'settings' },
 ];
 
