@@ -1,27 +1,38 @@
 import { LocalStorage } from 'quasar';
 
+// ── Public types ──────────────────────────────────────────
+
+export interface AiConfigProfile {
+  id: string;
+  name: string;
+  endpoint: string;
+  model: string;
+  /** Plaintext API key — only stored in memory; encrypted on disk */
+  apiKey: string;
+}
+
 export interface AiConfig {
   aiApiKey: string;
   aiEndpoint: string;
   aiModel: string;
 }
 
-const DEFAULT_ENDPOINT = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-const DEFAULT_MODEL = 'qwen-vl-plus';
+// ── Storage keys ──────────────────────────────────────────
 
-/**
- * In-memory decrypted cache for the AI API key, populated at app startup
- * via initAiConfigCache(). This keeps getAiConfig() synchronous so no
- * callers need to change.
- */
-let cachedAiKey: string | null = null;
+const PROFILES_KEY = 'aiProfiles_v2';
+const ACTIVE_PROFILE_KEY = 'aiActiveProfile_v2';
 
-// ── Web Crypto (AES-GCM + PBKDF2) helpers ──────────────────────────
-// The passphrase lives in the bundle, so this is defense-in-depth:
-// it protects against passive localStorage inspection and trivial XSS
-// key theft, but a determined attacker with the bundle can still derive
-// the key. The real protection is not shipping the key and (for multi-user)
-// moving signing to a backend proxy.
+// Legacy single-config keys (for migration)
+const LEGACY_ENDPOINT_KEY = 'aiEndpoint';
+const LEGACY_MODEL_KEY = 'aiModel';
+const LEGACY_API_KEY_KEY = 'aiApiKey';
+
+// ── In-memory cache ───────────────────────────────────────
+
+let profilesCache: AiConfigProfile[] | null = null;
+let activeProfileId: string | null = null;
+
+// ── Web Crypto (AES-GCM + PBKDF2) helpers ─────────────────
 
 const APP_SECRET = 'mistake-note-app::ai-key-v1';
 
@@ -48,7 +59,7 @@ async function deriveKey(salt: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
     baseKey,
     { name: 'AES-GCM', length: 256 },
     false,
-    ['encrypt', 'decrypt']
+    ['encrypt', 'decrypt'],
   );
 }
 
@@ -72,60 +83,241 @@ async function decryptKey(cipher: string): Promise<string> {
   return new TextDecoder().decode(pt);
 }
 
-// ── Exported async helpers ─────────────────────────────────────────
+// ── Internal storage helpers ──────────────────────────────
 
-/**
- * Initialise the in-memory decrypted key cache from encrypted localStorage.
- * Must be called once at app startup (in App.vue onMounted) before any
- * AI calls are made.
- */
-export async function initAiConfigCache(): Promise<void> {
-  const stored = (LocalStorage.getItem('aiApiKey') as string) || '';
-  if (!stored) {
-    cachedAiKey = '';
+interface StoredProfile {
+  id: string;
+  name: string;
+  endpoint: string;
+  model: string;
+  encryptedKey: string;
+}
+
+async function saveProfilesToStorage(profiles: AiConfigProfile[]): Promise<void> {
+  const stored: StoredProfile[] = await Promise.all(
+    profiles.map(async (p) => ({
+      id: p.id,
+      name: p.name,
+      endpoint: p.endpoint,
+      model: p.model,
+      encryptedKey: p.apiKey ? await encryptKey(p.apiKey) : '',
+    })),
+  );
+  LocalStorage.set(PROFILES_KEY, stored);
+}
+
+async function loadProfilesFromStorage(): Promise<AiConfigProfile[]> {
+  const stored = LocalStorage.getItem(PROFILES_KEY) as StoredProfile[] | null;
+  if (!stored || !Array.isArray(stored)) return [];
+
+  const profiles: AiConfigProfile[] = [];
+  for (const s of stored) {
+    let apiKey = '';
+    if (s.encryptedKey) {
+      try {
+        apiKey = await decryptKey(s.encryptedKey);
+      } catch {
+        // corrupted entry — keep empty key
+      }
+    }
+    profiles.push({
+      id: s.id,
+      name: s.name,
+      endpoint: s.endpoint,
+      model: s.model,
+      apiKey,
+    });
+  }
+  return profiles;
+}
+
+// ── Migration from legacy single-config format ────────────
+
+async function migrateLegacyConfig(): Promise<void> {
+  const oldEndpoint = LocalStorage.getItem(LEGACY_ENDPOINT_KEY) as string | null;
+  const oldModel = LocalStorage.getItem(LEGACY_MODEL_KEY) as string | null;
+  const oldEncryptedKey = LocalStorage.getItem(LEGACY_API_KEY_KEY) as string | null;
+
+  if (!oldEndpoint && !oldModel && !oldEncryptedKey) {
+    // No legacy data — create a default empty profile
+    profilesCache = [
+      {
+        id: 'default',
+        name: '默认',
+        endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        model: 'qwen-vl-plus',
+        apiKey: '',
+      },
+    ];
+    activeProfileId = 'default';
+    await saveProfilesToStorage(profilesCache);
+    LocalStorage.set(ACTIVE_PROFILE_KEY, 'default');
     return;
   }
-  try {
-    cachedAiKey = await decryptKey(stored);
-  } catch (e) {
-    console.warn('[aiConfig] Failed to decrypt stored AI API key, resetting cache.', e);
-    cachedAiKey = '';
+
+  let apiKey = '';
+  if (oldEncryptedKey) {
+    try {
+      apiKey = await decryptKey(oldEncryptedKey);
+    } catch {
+      // migration: key corrupted, start fresh
+    }
+  }
+
+  const profile: AiConfigProfile = {
+    id: 'default',
+    name: '默认',
+    endpoint: oldEndpoint || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: oldModel || 'qwen-vl-plus',
+    apiKey,
+  };
+
+  profilesCache = [profile];
+  activeProfileId = 'default';
+  await saveProfilesToStorage(profilesCache);
+  LocalStorage.set(ACTIVE_PROFILE_KEY, 'default');
+
+  // Clean up legacy keys
+  LocalStorage.remove(LEGACY_ENDPOINT_KEY);
+  LocalStorage.remove(LEGACY_MODEL_KEY);
+  LocalStorage.remove(LEGACY_API_KEY_KEY);
+}
+
+// ── Exported API ──────────────────────────────────────────
+
+/**
+ * Initialise the in-memory profile cache from localStorage.
+ * Must be called once at app startup (in App.vue onMounted).
+ * Also handles migration from the legacy single-config format.
+ */
+export async function initAiConfigCache(): Promise<void> {
+  const hasV2Profiles = LocalStorage.getItem(PROFILES_KEY) !== null;
+
+  if (!hasV2Profiles) {
+    await migrateLegacyConfig();
+    return;
+  }
+
+  profilesCache = await loadProfilesFromStorage();
+  activeProfileId = LocalStorage.getItem(ACTIVE_PROFILE_KEY) as string | null;
+
+  // If active profile doesn't exist or is null, fall back to first
+  if (!activeProfileId || !profilesCache.find((p) => p.id === activeProfileId)) {
+    activeProfileId = profilesCache[0]?.id ?? null;
   }
 }
 
-/**
- * Load the plaintext AI API key from encrypted localStorage.
- * Used by the settings form to populate the input field.
- */
-export async function loadAiApiKey(): Promise<string> {
-  const stored = (LocalStorage.getItem('aiApiKey') as string) || '';
-  if (!stored) return '';
-  try {
-    return await decryptKey(stored);
-  } catch {
-    return '';
+/** Return all saved profiles (plaintext apiKey in memory). */
+export async function getProfiles(): Promise<AiConfigProfile[]> {
+  if (!profilesCache) {
+    await initAiConfigCache();
   }
+  return profilesCache ?? [];
+}
+
+/** Return the active profile's ID. */
+export function getActiveProfileId(): string | null {
+  return activeProfileId;
+}
+
+/** Return the currently active profile, or the first one if none set. */
+export async function getActiveProfile(): Promise<AiConfigProfile | null> {
+  const profiles = await getProfiles();
+  if (!activeProfileId) return profiles[0] ?? null;
+  return profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
 }
 
 /**
- * Encrypt and persist the AI API key to localStorage, then update the
- * in-memory cache.
- */
-export async function storeAiApiKey(plain: string): Promise<void> {
-  const cipher = await encryptKey(plain);
-  LocalStorage.setItem('aiApiKey', cipher);
-  cachedAiKey = plain;
-}
-
-/**
- * Read AI configuration from localStorage + the in-memory decrypted cache.
- * This function remains **synchronous** so that all 7 existing callers
- * continue to work without modification.
+ * Synchronous accessor for the active AI config.
+ * Used by all AI service callers (directAi, ocrService, aiService, queueStore).
+ * Assumes initAiConfigCache() has already been called at startup.
  */
 export function getAiConfig(): AiConfig {
+  const profile = profilesCache?.find((p) => p.id === activeProfileId) ?? profilesCache?.[0];
   return {
-    aiApiKey: cachedAiKey ?? '',
-    aiEndpoint: (LocalStorage.getItem('aiEndpoint') as string) || DEFAULT_ENDPOINT,
-    aiModel: (LocalStorage.getItem('aiModel') as string) || DEFAULT_MODEL,
+    aiApiKey: profile?.apiKey ?? '',
+    aiEndpoint: profile?.endpoint ?? 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    aiModel: profile?.model ?? 'qwen-vl-plus',
   };
+}
+
+/** Add a new profile and persist. Returns the created profile. */
+export async function addProfile(
+  name: string,
+  endpoint: string,
+  model: string,
+  apiKey: string,
+): Promise<AiConfigProfile> {
+  const profiles = await getProfiles();
+  const id = `profile_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const profile: AiConfigProfile = { id, name, endpoint, model, apiKey };
+  profiles.push(profile);
+  profilesCache = profiles;
+  await saveProfilesToStorage(profiles);
+  return profile;
+}
+
+/** Update fields of an existing profile and persist. */
+export async function updateProfile(
+  id: string,
+  data: Partial<Pick<AiConfigProfile, 'name' | 'endpoint' | 'model' | 'apiKey'>>,
+): Promise<void> {
+  const profiles = await getProfiles();
+  const idx = profiles.findIndex((p) => p.id === id);
+  if (idx === -1) throw new Error(`Profile "${id}" not found`);
+
+  if (data.name !== undefined) profiles[idx]!.name = data.name;
+  if (data.endpoint !== undefined) profiles[idx]!.endpoint = data.endpoint;
+  if (data.model !== undefined) profiles[idx]!.model = data.model;
+  if (data.apiKey !== undefined) profiles[idx]!.apiKey = data.apiKey;
+
+  profilesCache = profiles;
+  await saveProfilesToStorage(profiles);
+}
+
+/** Delete a profile. Refuses to delete the last remaining profile. */
+export async function deleteProfile(id: string): Promise<void> {
+  const profiles = await getProfiles();
+  if (profiles.length <= 1) throw new Error('至少保留一个配置');
+
+  const idx = profiles.findIndex((p) => p.id === id);
+  if (idx === -1) return;
+
+  profiles.splice(idx, 1);
+  profilesCache = profiles;
+  await saveProfilesToStorage(profiles);
+
+  // If the deleted profile was active, switch to the first remaining
+  if (activeProfileId === id) {
+    activeProfileId = profiles[0]?.id ?? null;
+    if (activeProfileId) {
+      LocalStorage.set(ACTIVE_PROFILE_KEY, activeProfileId);
+    } else {
+      LocalStorage.remove(ACTIVE_PROFILE_KEY);
+    }
+  }
+}
+
+/** Set the active profile by ID and persist the choice. */
+export async function setActiveProfile(id: string): Promise<void> {
+  const profiles = await getProfiles();
+  if (!profiles.find((p) => p.id === id)) throw new Error(`Profile "${id}" not found`);
+  activeProfileId = id;
+  LocalStorage.set(ACTIVE_PROFILE_KEY, id);
+}
+
+// ── Backward-compatible aliases ───────────────────────────
+
+/** @deprecated Use getActiveProfile() instead. */
+export async function loadAiApiKey(): Promise<string> {
+  const profile = await getActiveProfile();
+  return profile?.apiKey ?? '';
+}
+
+/** @deprecated Use updateProfile() instead. */
+export async function storeAiApiKey(plain: string): Promise<void> {
+  const profile = await getActiveProfile();
+  if (profile) {
+    await updateProfile(profile.id, { apiKey: plain });
+  }
 }

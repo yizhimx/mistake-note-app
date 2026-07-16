@@ -268,12 +268,12 @@
       <div class="col-12 col-md-6">
         <q-card flat bordered>
           <q-card-section>
-            <div class="text-weight-medium q-mb-sm">知识点分布</div>
+            <div class="text-weight-medium q-mb-sm">科目分布</div>
             <StatsChart
-              v-if="knowledgePointData.length > 0"
+              v-if="subjectData.length > 0"
               type="pie"
-              :data="knowledgePointData"
-              @sector-click="onKnowledgePointClick"
+              :data="subjectData"
+              @sector-click="onSubjectClick"
             />
             <div v-else class="text-center q-pa-lg text-grey">暂无数据</div>
           </q-card-section>
@@ -600,16 +600,12 @@ const masteryBarData = computed(() => {
   return { labels, values };
 });
 
-// 知识点分布饼图：优先 knowledgePoints，回退 knowledgeAreas
-const knowledgePointData = computed(() => {
+// 科目分布饼图：按 subject 字段统计
+const subjectData = computed(() => {
   const counts: Record<string, number> = {};
   for (const m of filtered.value) {
-    const points = (m.knowledgePoints && m.knowledgePoints.length > 0)
-      ? m.knowledgePoints
-      : (m.knowledgeAreas || []);
-    for (const kp of points) {
-      counts[kp] = (counts[kp] || 0) + 1;
-    }
+    const sub = m.subject || '未分类';
+    counts[sub] = (counts[sub] || 0) + 1;
   }
   return Object.entries(counts).map(([k, v]) => ({ name: k, value: v }));
 });
@@ -653,9 +649,9 @@ function clearFilters() {
   filters.knowledgePoint = '';
 }
 
-function onKnowledgePointClick(name: string) {
-  filters.knowledgePoint = name;
-  $q.notify({ type: 'info', message: `已按知识点筛选: ${name}`, timeout: 1500 });
+function onSubjectClick(name: string) {
+  filters.subject = [name];
+  $q.notify({ type: 'info', message: `已按科目筛选: ${name}`, timeout: 1500 });
 }
 
 onMounted(async () => {

@@ -13,7 +13,7 @@ import {
   purgeMistake as dbPurge,
   purgeAllMistakes as dbPurgeAll,
 } from '@/services/mistakeService';
-import { preloadFromMarkdown, deleteImage, extractImageRefs } from '@/services/imageStore';
+import { preloadFromMarkdown } from '@/services/imageStore';
 
 export interface MistakeRecord {
   id: string;
@@ -109,16 +109,7 @@ export const useMistakeStore = defineStore('mistake', {
       }
     },
     async removeMistake(id: string) {
-      const removed = this.mistakes.find(m => m.id === id);
-      if (removed) {
-        const refs = [
-          ...extractImageRefs(removed.content || ''),
-          ...extractImageRefs(removed.answer || ''),
-        ];
-        for (const ref of refs) {
-          await deleteImage(ref).catch(() => {});
-        }
-      }
+      // 只软删除数据库记录，不删除图片文件（其他题目可能引用同一张图片）
       await dbDelete(id);
       this.mistakes = this.mistakes.filter((m) => m.id !== id);
     },

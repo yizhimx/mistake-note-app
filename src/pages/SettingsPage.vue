@@ -64,10 +64,94 @@
     <q-card flat bordered>
       <q-card-section>
         <div class="text-h6">AI 服务配置</div>
-        <q-input v-model="aiEndpoint" label="API 接口地址" outlined class="q-mt-sm" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" />
-        <q-input v-model="aiModel" label="模型名称" outlined class="q-mt-sm" placeholder="qwen-vl-plus" />
-        <div class="text-caption q-mb-xs text-grey">截图识别需使用支持视觉的模型（如 qwen-vl-plus）；文本分析可用 qwen-plus / qwen-turbo 等。</div>
-        <q-input v-model="aiApiKey" label="API Key" outlined type="password" class="q-mt-sm" />
+        <div class="text-caption text-grey q-mb-sm">可配置多组 AI 服务，在不同场景下切换使用</div>
+
+        <!-- Profile list -->
+        <q-list v-if="profiles.length > 0" bordered separator class="rounded-borders">
+          <q-item
+            v-for="profile in profiles"
+            :key="profile.id"
+            :active="selectedProfileId === profile.id"
+            clickable
+            @click="selectProfile(profile.id)"
+          >
+            <q-item-section>
+              <q-item-label>{{ profile.name }}</q-item-label>
+              <q-item-label caption lines="1">{{ profile.model }} · {{ profile.endpoint }}</q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-btn
+                v-if="activeProfileId === profile.id"
+                color="primary"
+                flat
+                dense
+                icon="check_circle"
+                label="活跃"
+                size="sm"
+                no-caps
+              />
+              <q-btn
+                v-else
+                color="grey"
+                flat
+                dense
+                label="切换"
+                size="sm"
+                no-caps
+                @click.stop="handleSetActive(profile.id)"
+              />
+            </q-item-section>
+          </q-item>
+        </q-list>
+
+        <q-btn flat color="primary" icon="add" label="添加配置" class="q-mt-sm" @click="handleAddProfile" />
+
+        <!-- Edit selected profile -->
+        <template v-if="selectedProfile">
+          <q-separator class="q-my-md" />
+          <div class="text-subtitle2 q-mb-sm">编辑配置：{{ selectedProfile.name }}</div>
+          <q-input
+            v-model="selectedProfile.name"
+            label="配置名称"
+            outlined
+            class="q-mt-sm"
+            placeholder="例如：阿里云、OpenAI、本地"
+          />
+          <q-input
+            v-model="selectedProfile.endpoint"
+            label="API 接口地址"
+            outlined
+            class="q-mt-sm"
+            placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
+          />
+          <q-input
+            v-model="selectedProfile.model"
+            label="模型名称"
+            outlined
+            class="q-mt-sm"
+            placeholder="qwen-vl-plus"
+          />
+          <div class="text-caption q-mb-xs text-grey">
+            截图识别需使用支持视觉的模型（如 qwen-vl-plus）；文本分析可用 qwen-plus / qwen-turbo 等。
+          </div>
+          <q-input
+            v-model="selectedProfile.apiKey"
+            label="API Key"
+            outlined
+            type="password"
+            class="q-mt-sm"
+          />
+          <div class="row q-mt-sm q-gutter-sm">
+            <q-btn
+              v-if="profiles.length > 1"
+              color="negative"
+              flat
+              icon="delete"
+              label="删除此配置"
+              @click="handleDeleteProfile(selectedProfile.id)"
+            />
+          </div>
+        </template>
       </q-card-section>
     </q-card>
 
@@ -134,10 +218,19 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { uid } from 'quasar';
 import { useQuasar } from 'quasar';
 // [CLOUD DISABLED] import { createSupabaseClient, restoreSession, signIn, signUp, signOut } from '@/services/supabase';
 // [CLOUD DISABLED] import { testConnection as testCloud, initCloudStore } from '@/services/cloudStore';
-import { loadAiApiKey, storeAiApiKey } from '@/services/aiConfig';
+import {
+  getProfiles,
+  getActiveProfileId,
+  addProfile,
+  updateProfile,
+  deleteProfile,
+  setActiveProfile,
+  type AiConfigProfile,
+} from '@/services/aiConfig';
 // [CLOUD DISABLED] import { getConflicts, resolveConflict, type ConflictRow } from '@/services/syncService';
 // [CLOUD DISABLED] import { useSyncStore } from '@/stores/syncStore';
 
@@ -172,18 +265,20 @@ const syncStore = useSyncStore();
 const conflicts = ref<ConflictRow[]>([]);
 */
 
-const aiEndpoint = ref('');
-const aiModel = ref('');
-const aiApiKey = ref('');
+const profiles = ref<AiConfigProfile[]>([]);
+const activeProfileId = ref<string | null>(null);
+const selectedProfileId = ref<string | null>(null);
+
+const selectedProfile = computed(() => {
+  if (!selectedProfileId.value) return null;
+  return profiles.value.find((p) => p.id === selectedProfileId.value) ?? null;
+});
 
 onMounted(async () => {
   darkMode.value = $q.dark.isActive;
   compressImages.value = $q.localStorage.getItem('compressImages') !== 'false';
   // [CLOUD DISABLED] supabaseUrl.value = $q.localStorage.getItem('supabaseUrl') as string || '';
   // [CLOUD DISABLED] supabaseAnonKey.value = $q.localStorage.getItem('supabaseAnonKey') as string || '';
-  aiEndpoint.value = $q.localStorage.getItem('aiEndpoint') as string || '';
-  aiModel.value = $q.localStorage.getItem('aiModel') as string || '';
-  aiApiKey.value = await loadAiApiKey();
   // [CLOUD DISABLED] cloudEndpoint.value = $q.localStorage.getItem('cloudEndpoint') as string || '';
   // [CLOUD DISABLED] cloudRegion.value = $q.localStorage.getItem('cloudRegion') as string || 'auto';
   // [CLOUD DISABLED] cloudBucket.value = $q.localStorage.getItem('cloudBucket') as string || '';
@@ -201,6 +296,13 @@ onMounted(async () => {
 
   // [CLOUD DISABLED] conflicts.value = await getConflicts();
   // [CLOUD DISABLED] await syncStore.loadConflictCount();
+
+  // Load AI profiles
+  profiles.value = await getProfiles();
+  activeProfileId.value = getActiveProfileId();
+  if (profiles.value.length > 0) {
+    selectedProfileId.value = profiles.value[0]!.id;
+  }
 });
 
 function toggleDark(val: boolean) {
@@ -301,13 +403,56 @@ async function handleResolve(id: string, action: 'local' | 'remote' | 'dismiss')
 }
 */
 
+function selectProfile(id: string) {
+  selectedProfileId.value = id;
+}
+
+async function handleSetActive(id: string) {
+  try {
+    await setActiveProfile(id);
+    activeProfileId.value = id;
+    $q.notify({ type: 'positive', message: '已切换至「' + (profiles.value.find((p) => p.id === id)?.name ?? '') + '」', timeout: 1500 });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `切换失败：${e?.message || e}`, timeout: 3000 });
+  }
+}
+
+function handleAddProfile() {
+  const newProfile: AiConfigProfile = {
+    id: uid(),
+    name: '新配置',
+    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen-vl-plus',
+    apiKey: '',
+  };
+  profiles.value.push(newProfile);
+  selectedProfileId.value = newProfile.id;
+}
+
+async function handleDeleteProfile(id: string) {
+  if (profiles.value.length <= 1) {
+    $q.notify({ type: 'warning', message: '至少保留一个配置', timeout: 2000 });
+    return;
+  }
+  try {
+    await deleteProfile(id);
+    profiles.value = profiles.value.filter((p) => p.id !== id);
+    if (selectedProfileId.value === id) {
+      selectedProfileId.value = profiles.value[0]?.id ?? null;
+    }
+    if (activeProfileId.value === id) {
+      activeProfileId.value = getActiveProfileId();
+    }
+    $q.notify({ type: 'positive', message: '配置已删除', timeout: 1500 });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `删除失败：${e?.message || e}`, timeout: 3000 });
+  }
+}
+
 async function saveSettings() {
   $q.localStorage.set('compressImages', compressImages.value);
   // [CLOUD DISABLED] $q.localStorage.set('supabaseUrl', supabaseUrl.value);
   // [CLOUD DISABLED] $q.localStorage.set('supabaseAnonKey', supabaseAnonKey.value);
-  $q.localStorage.set('aiEndpoint', aiEndpoint.value);
-  $q.localStorage.set('aiModel', aiModel.value);
-  await storeAiApiKey(aiApiKey.value);
   // [CLOUD DISABLED] $q.localStorage.set('cloudEndpoint', cloudEndpoint.value);
   // [CLOUD DISABLED] $q.localStorage.set('cloudRegion', cloudRegion.value);
   // [CLOUD DISABLED] $q.localStorage.set('cloudBucket', cloudBucket.value);
@@ -325,6 +470,20 @@ async function saveSettings() {
   //     publicUrlBase: cloudPublicUrl.value || undefined,
   //   });
   // }
-  $q.notify({ type: 'positive', message: '设置已保存', timeout: 1500 });
+
+  // Persist all AI profiles
+  try {
+    for (const p of profiles.value) {
+      await updateProfile(p.id, {
+        name: p.name,
+        endpoint: p.endpoint,
+        model: p.model,
+        apiKey: p.apiKey,
+      });
+    }
+    $q.notify({ type: 'positive', message: '设置已保存', timeout: 1500 });
+  } catch (e: any) {
+    $q.notify({ type: 'negative', message: `保存失败：${e?.message || e}`, timeout: 3000 });
+  }
 }
 </script>
