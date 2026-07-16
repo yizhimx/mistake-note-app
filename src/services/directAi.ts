@@ -6,23 +6,50 @@ function normalizeUrl(endpoint?: string): string {
   return base.includes('/chat/completions') ? base : `${base}/chat/completions`;
 }
 
+// Request ID generator for cancellation tracking
+let requestIdCounter = 0;
+function generateRequestId(): string {
+  return `ai_req_${Date.now()}_${++requestIdCounter}`;
+}
+
 // Transport wrapper: in Electron, route through main-process proxy (no CORS);
 // in web/browser, fall back to direct fetch.
-async function aiFetch(url: string, init: RequestInit): Promise<Response> {
+async function aiFetch(
+  url: string,
+  init: RequestInit,
+  signal?: AbortSignal | null,
+): Promise<Response> {
+  // Electron IPC path with cancellation support
   if (window.electronAPI?.aiRequest) {
     const headers = (init.headers as Record<string, string>) ?? {};
-    const res = await window.electronAPI.aiRequest({
-      url,
-      method: init.method ?? 'POST',
-      headers,
-      body: init.body as string,
-    });
-    return new Response(res.body, { status: res.status, statusText: res.statusText });
+    const requestId = generateRequestId();
+
+    // If signal provided, register for abort
+    let aborted = false;
+    const abortHandler = () => {
+      aborted = true;
+      window.electronAPI?.cancelAiRequest?.(requestId);
+    };
+    signal?.addEventListener('abort', abortHandler);
+
+    try {
+      const res = await window.electronAPI.aiRequest({
+        url,
+        method: init.method ?? 'POST',
+        headers,
+        body: init.body as string,
+        requestId,
+      });
+      return new Response(res.body, { status: res.status, statusText: res.statusText });
+    } finally {
+      signal?.removeEventListener('abort', abortHandler);
+    }
   }
+
   // Fallback: direct fetch (web mode, or stale Electron build where preload wasn't updated)
   console.error('[directAi] window.electronAPI.aiRequest 不可用，回退到直接 fetch（可能被 CORS 拦截，或 Electron 未完全重启/重新构建）');
   try {
-    return await fetch(url, init);
+    return await fetch(url, { ...init, signal: signal ?? null });
   } catch (e: any) {
     throw new Error(`直接 fetch 失败: ${e?.message || e}（请确认 Electron 已完全退出并重新运行 quasar dev -m electron）`);
   }
@@ -30,11 +57,12 @@ async function aiFetch(url: string, init: RequestInit): Promise<Response> {
 
 export async function directTextChat(
   prompt: string,
-  options?: { systemPrompt?: string; temperature?: number },
+  options?: { systemPrompt?: string; temperature?: number; signal?: AbortSignal | null },
 ): Promise<string> {
   const config = getAiConfig();
   if (!config.aiApiKey) throw new Error('未配置 AI API Key，请先在设置中填写');
 
+  const { signal, ...opts } = options ?? {};
   const resp = await aiFetch(normalizeUrl(config.aiEndpoint), {
     method: 'POST',
     headers: {
@@ -44,12 +72,12 @@ export async function directTextChat(
     body: JSON.stringify({
       model: config.aiModel || 'qwen-plus',
       messages: [
-        { role: 'system', content: options?.systemPrompt || 'You are a helpful assistant.' },
+        { role: 'system', content: opts?.systemPrompt || 'You are a helpful assistant.' },
         { role: 'user', content: prompt },
       ],
-      temperature: options?.temperature ?? 0.3,
+      temperature: opts?.temperature ?? 0.3,
     }),
-  });
+  }, signal ?? undefined);
 
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
@@ -65,11 +93,12 @@ export async function directTextChat(
 export async function directVisionChat(
   text: string,
   imageDataUrl: string,
-  options?: { systemPrompt?: string; temperature?: number },
+  options?: { systemPrompt?: string; temperature?: number; signal?: AbortSignal | null },
 ): Promise<string> {
   const config = getAiConfig();
   if (!config.aiApiKey) throw new Error('未配置 AI API Key，请先在设置中填写');
 
+  const { signal, ...opts } = options ?? {};
   const resp = await aiFetch(normalizeUrl(config.aiEndpoint), {
     method: 'POST',
     headers: {
@@ -79,7 +108,7 @@ export async function directVisionChat(
     body: JSON.stringify({
       model: config.aiModel || 'qwen-vl-plus',
       messages: [
-        { role: 'system', content: options?.systemPrompt || 'You are a helpful assistant.' },
+        { role: 'system', content: opts?.systemPrompt || 'You are a helpful assistant.' },
         {
           role: 'user',
           content: [
@@ -88,9 +117,9 @@ export async function directVisionChat(
           ],
         },
       ],
-      temperature: options?.temperature ?? 0.2,
+      temperature: opts?.temperature ?? 0.2,
     }),
-  });
+  }, signal ?? undefined);
 
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');

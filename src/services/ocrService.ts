@@ -1,7 +1,7 @@
 import { getAiConfig } from './aiConfig';
 import { directVisionChat } from './directAi';
 
-export async function recognizeText(dataUrl: string): Promise<string> {
+export async function recognizeText(dataUrl: string, signal?: AbortSignal): Promise<string> {
   const config = getAiConfig();
   if (!config.aiApiKey) {
     throw new Error('未配置 AI API Key，请先在设置中填写');
@@ -13,7 +13,7 @@ export async function recognizeText(dataUrl: string): Promise<string> {
       '- 数学公式用 LaTeX 行内 $...$ 或块级 $$...$$ 表示。\n' +
       '- 禁止解题、禁止推理、禁止补全、禁止生成答案与解析。\n' +
       '- 只输出题目本身的 Markdown 文本，不要用代码块包裹，不要输出多余解释。';
-    return await directVisionChat(prompt, dataUrl, { temperature: 0.2 });
+    return await directVisionChat(prompt, dataUrl, { temperature: 0.2, signal: signal ?? null });
   } catch (e) {
     console.error('OCR recognition failed:', e);
     throw e;

@@ -12,9 +12,11 @@
           <q-tooltip>{{ isDark ? '切换亮色模式' : '切换暗色模式' }}</q-tooltip>
         </q-btn>
 
+        <!-- [CLOUD DISABLED] Sync status button
         <q-btn flat round dense :icon="syncIcon" :color="syncColor" @click="handleSyncClick">
           <q-tooltip>{{ syncTooltip }}</q-tooltip>
         </q-btn>
+        -->
       </q-toolbar>
     </q-header>
 
@@ -105,9 +107,9 @@ import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter, useRoute } from 'vue-router';
 import { useQueueStore } from '@/stores/queueStore';
-import { useSyncStore } from '@/stores/syncStore';
-import { triggerSync } from '@/services/syncService';
-import { getSupabaseClient } from '@/services/supabase';
+// [CLOUD DISABLED] import { useSyncStore } from '@/stores/syncStore';
+// [CLOUD DISABLED] import { triggerSync } from '@/services/syncService';
+// [CLOUD DISABLED] import { getSupabaseClient } from '@/services/supabase';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -116,7 +118,7 @@ const route = useRoute();
 const leftDrawerOpen = ref(false);
 const currentTab = ref('mistake-list');
 const showAddActions = ref(false);
-const syncStore = useSyncStore();
+// [CLOUD DISABLED] const syncStore = useSyncStore();
 
 const isDark = computed(() => $q.dark.isActive);
 
@@ -129,6 +131,8 @@ function toggleLeftDrawer() {
   leftDrawerOpen.value = !leftDrawerOpen.value;
 }
 
+/*
+// [CLOUD DISABLED] Sync status computeds + handler
 const syncIcon = computed(() => {
   if (!syncStore.isOnline) return 'cloud_off';
   if (syncStore.syncState === 'syncing') return 'sync';
@@ -178,6 +182,7 @@ function handleSyncClick() {
   if (!getSupabaseClient()) { router.push({ name: 'settings' }); return; }
   triggerSync();
 }
+*/
 
 onMounted(() => {
   const queue = useQueueStore();

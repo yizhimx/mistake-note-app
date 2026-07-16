@@ -21,10 +21,14 @@ let syncTimer: ReturnType<typeof setInterval> | null = null;
 const SYNC_INTERVAL = 30000;
 
 export function startSync() {
+  // [CLOUD DISABLED] Temporary no-op for local-only mode.
+  // Re-enable: uncomment callers in App.vue/MainLayout.vue and remove the early return below.
+  return; /*
   if (syncTimer) return;
   syncTimer = setInterval(doSync, SYNC_INTERVAL);
   window.addEventListener('online', handleOnline);
   window.addEventListener('offline', handleOffline);
+  */
 }
 
 export function stopSync() {
@@ -45,7 +49,12 @@ function handleOffline() {
   useSyncStore().setOnline(false);
 }
 
-export function triggerSync() { doSync(); }
+export function triggerSync() {
+  // [CLOUD DISABLED] Temporary no-op for local-only mode.
+  return; /*
+  doSync();
+  */
+}
 
 async function doSync() {
   const store = useSyncStore();

@@ -5,11 +5,11 @@
 <script setup lang="ts">
 import { useQuasar } from 'quasar';
 import { onMounted } from 'vue';
-import { initSupabaseFromStorage, restoreSession } from '@/services/supabase';
-import { startSync } from '@/services/syncService';
+// [CLOUD DISABLED] import { initSupabaseFromStorage, restoreSession } from '@/services/supabase';
+// [CLOUD DISABLED] import { startSync } from '@/services/syncService';
 import { getDb } from '@/services/db';
 import { initMobileFs } from '@/services/mobileFs';
-import { initCloudStoreFromStorage } from '@/services/cloudStore';
+// [CLOUD DISABLED] import { initCloudStoreFromStorage } from '@/services/cloudStore';
 import { initAiConfigCache } from '@/services/aiConfig';
 
 const $q = useQuasar();
@@ -22,11 +22,10 @@ onMounted(async () => {
 
   initMobileFs(); // Initialize Capacitor Filesystem (no-op on non-mobile)
   await initAiConfigCache(); // Populate in-memory decrypted AI API key cache
-  initCloudStoreFromStorage();
-
-  initSupabaseFromStorage();
-  restoreSession(); // fire-and-forget: session not needed for startup
-  startSync();
+  // [CLOUD DISABLED] initCloudStoreFromStorage();
+  // [CLOUD DISABLED] initSupabaseFromStorage();
+  // [CLOUD DISABLED] restoreSession(); // fire-and-forget: session not needed for startup
+  // [CLOUD DISABLED] startSync();
 
   // Pre-warm database worker (parallel with above)
   getDb();

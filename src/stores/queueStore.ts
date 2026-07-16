@@ -14,6 +14,9 @@ import {
 import type { AiQueueItem, SplitQuestion } from '@/services/aiQueueService';
 import { buildTagsPrompt, parseTagsJson } from '@/utils/aiParsing';
 
+// Map to track AbortControllers for in-flight queue items
+const abortControllers = new Map<string, AbortController>();
+
 function parseQuestionsJson(text: string): SplitQuestion[] {
   let cleaned = (text || '').trim();
   const m = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -44,7 +47,7 @@ function parseQuestionsJson(text: string): SplitQuestion[] {
     .filter((q) => q.content);
 }
 
-async function splitIntoQuestions(ocrText: string): Promise<SplitQuestion[]> {
+async function splitIntoQuestions(ocrText: string, signal?: AbortSignal): Promise<SplitQuestion[]> {
   const prompt = `你正在整理错题。以下是从一张试卷或练习册页面识别出的文字内容，该页面可能包含多道独立题目。请将整页内容拆分为若干道独立的错题，每道错题应是一个完整的题目。
 
 每道错题包含：
@@ -67,7 +70,7 @@ async function splitIntoQuestions(ocrText: string): Promise<SplitQuestion[]> {
 OCR 文字内容：
 ${ocrText}`;
 
-  const resContent = await directTextChat(prompt, { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
+  const resContent = await directTextChat(prompt, { temperature: 0.3, systemPrompt: 'You are a teaching expert.', signal: signal ?? null });
   const parsed = parseQuestionsJson(resContent);
   if (parsed.length === 0) {
     return [{ content: ocrText, subject: '', difficulty: 3, knowledgeAreas: [] }];
@@ -75,7 +78,15 @@ ${ocrText}`;
   return parsed;
 }
 
-async function processQueueItem(item: AiQueueItem): Promise<void> {
+function checkAbort(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    const err = new Error('已取消');
+    err.name = 'AbortError';
+    throw err;
+  }
+}
+
+async function processQueueItem(item: AiQueueItem, signal?: AbortSignal): Promise<void> {
   const config = getAiConfig();
   if (!config.aiApiKey) {
     await updateQueueItem(item.id, {
@@ -100,7 +111,8 @@ async function processQueueItem(item: AiQueueItem): Promise<void> {
 
 题目内容：
 ${item.imageData}`;
-      const content = await directTextChat(prompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。' });
+      const content = await directTextChat(prompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。', signal: signal ?? null });
+      checkAbort(signal);
       const text = (content || '').trim();
 
       // Also extract structured info (subject, difficulty, knowledge areas) from the content
@@ -108,7 +120,8 @@ ${item.imageData}`;
       let difficulty = 3;
       let knowledgeAreas: string[] = [];
       try {
-        const tagsRes = await directTextChat(buildTagsPrompt(item.imageData), { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
+        const tagsRes = await directTextChat(buildTagsPrompt(item.imageData), { temperature: 0.3, systemPrompt: 'You are a teaching expert.', signal: signal ?? null });
+        checkAbort(signal);
         const tags = parseTagsJson(tagsRes);
         subject = tags.subject;
         difficulty = tags.difficulty;
@@ -132,7 +145,8 @@ ${item.imageData}`;
       }
     } else {
       // Recognition: OCR → split → analysis → tags → apply
-      const content = await recognizeText(item.imageData);
+      const content = await recognizeText(item.imageData, signal);
+      checkAbort(signal);
       if (!content.trim()) {
         throw new Error('OCR 未识别到题目内容，请确认图片清晰度');
       }
@@ -145,11 +159,13 @@ ${item.imageData}`;
         let answer = '';
         // Try up to 2 times to get structured info from AI
         for (let attempt = 0; attempt < 2; attempt++) {
+          checkAbort(signal);
           const prompt = attempt === 0
             ? buildTagsPrompt(content)
             : `请严格按以下 JSON 格式输出，不要包含任何其他文字：\n{\n  "subject": "科目",\n  "difficulty": 3,\n  "knowledgeAreas": "考点1，考点2"\n}\n\n题目内容：\n${content}`;
           try {
-            const res = await directTextChat(prompt, { temperature: 0.3, systemPrompt: 'You are a teaching expert.' });
+            const res = await directTextChat(prompt, { temperature: 0.3, systemPrompt: 'You are a teaching expert.', signal: signal ?? null });
+            checkAbort(signal);
             const tags = parseTagsJson(res);
             difficulty = tags.difficulty;
             subject = tags.subject;
@@ -171,13 +187,16 @@ ${item.imageData}`;
 
 题目内容：
 ${content}`;
-          answer = await directTextChat(analysisPrompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。' });
+answer = await directTextChat(analysisPrompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。', signal: signal ?? null });
+          checkAbort(signal);
         } catch { /* analysis failed, answer stays empty */ }
         questions = [{ content, subject, difficulty, knowledgeAreas, answer }];
       } else {
-        questions = await splitIntoQuestions(content);
+        questions = await splitIntoQuestions(content, signal);
+        checkAbort(signal);
         // Generate analysis for each question
         for (const q of questions) {
+          checkAbort(signal);
           try {
             const analysisPrompt = `你是一位严谨的学科教师，请解析以下错题。返回格式：
 
@@ -189,12 +208,16 @@ ${content}`;
 
 题目内容：
 ${q.content}`;
-            q.answer = await directTextChat(analysisPrompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。' });
+            q.answer = await directTextChat(analysisPrompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。', signal: signal ?? null });
+            checkAbort(signal);
           } catch { /* analysis failed */ }
         }
       }
 
       const first = questions[0];
+      if (!first) {
+        throw new Error('未能解析出任何题目');
+      }
       await updateQueueItem(item.id, {
         status: 'completed',
         resultContent: first.content,
@@ -222,6 +245,15 @@ ${q.content}`;
       }
     }
   } catch (e: any) {
+    // Don't mark as failed if aborted
+    if (e?.name === 'AbortError' || e?.message === '已取消') {
+      await updateQueueItem(item.id, {
+        status: 'cancelled',
+        error: '已取消',
+        processedAt: new Date().toISOString(),
+      });
+      return;
+    }
     await updateQueueItem(item.id, {
       status: 'failed',
       error: e?.message || '处理失败',
@@ -284,12 +316,24 @@ export const useQueueStore = defineStore('queue', {
     },
 
     async cancelItem(id: string) {
+      // If item is currently processing, abort the in-flight request
+      const controller = abortControllers.get(id);
+      if (controller) {
+        controller.abort();
+        abortControllers.delete(id);
+      }
       await updateQueueItem(id, { status: 'cancelled' });
       const item = this.items.find((i) => i.id === id);
       if (item) item.status = 'cancelled';
     },
 
     async removeItem(id: string) {
+      // If item is currently processing, cancel it first
+      const controller = abortControllers.get(id);
+      if (controller) {
+        controller.abort();
+        abortControllers.delete(id);
+      }
       await dbDelete(id);
       this.items = this.items.filter((i) => i.id !== id);
     },
@@ -319,8 +363,10 @@ export const useQueueStore = defineStore('queue', {
       const pending = this.items.find((i) => i.status === 'pending');
       if (!pending) return;
       this.processing = true;
+      const controller = new AbortController();
+      abortControllers.set(pending.id, controller);
       try {
-        await processQueueItem(pending);
+        await processQueueItem(pending, controller.signal);
         const idx = this.items.findIndex((i) => i.id === pending.id);
         if (idx !== -1) {
           const fresh = await fetchQueueItems();
@@ -328,6 +374,7 @@ export const useQueueStore = defineStore('queue', {
           if (updated) this.items[idx] = updated;
         }
       } finally {
+        abortControllers.delete(pending.id);
         this.processing = false;
         // check for more pending after a short delay
         setTimeout(() => this.tryProcessNext(), 1000);

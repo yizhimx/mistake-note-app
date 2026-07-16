@@ -16,7 +16,9 @@ declare global {
         method?: string;
         headers?: Record<string, string>;
         body?: string;
+        requestId?: string;
       }) => Promise<{ ok: boolean; status: number; statusText: string; body: string }>;
+      cancelAiRequest: (requestId: string) => Promise<{ success: boolean; reason?: string }>;
     };
   }
 }

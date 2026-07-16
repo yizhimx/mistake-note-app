@@ -25,6 +25,7 @@
       </q-card-section>
     </q-card>
 
+    <!-- [CLOUD DISABLED] Supabase 云同步 card
     <q-card flat bordered class="q-mb-md">
       <q-card-section>
         <div class="text-h6">Supabase 云同步</div>
@@ -57,6 +58,7 @@
         </template>
       </q-card-section>
     </q-card>
+    -->
 
     
     <q-card flat bordered>
@@ -69,6 +71,7 @@
       </q-card-section>
     </q-card>
 
+    <!-- [CLOUD DISABLED] 缤纷云存储 card
     <q-card flat bordered class="q-mb-md">
       <q-card-section>
         <div class="text-h6">缤纷云存储</div>
@@ -96,7 +99,9 @@
         </q-banner>
       </q-card-section>
     </q-card>
+    -->
 
+    <!-- [CLOUD DISABLED] 同步冲突 card
     <q-card flat bordered class="q-mb-md">
       <q-card-section>
         <div class="text-h6">同步冲突</div>
@@ -119,6 +124,7 @@
         <div v-else class="text-body2 text-grey">无同步冲突</div>
       </q-card-section>
     </q-card>
+    -->
 
     <div class="row justify-center q-mt-md">
       <q-btn color="primary" icon="save" label="保存设置" @click="saveSettings" unelevated class="full-width" style="max-width: 400px" />
@@ -129,18 +135,20 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
-import { createSupabaseClient, restoreSession, signIn, signUp, signOut } from '@/services/supabase';
-import { testConnection as testCloud, initCloudStore } from '@/services/cloudStore';
+// [CLOUD DISABLED] import { createSupabaseClient, restoreSession, signIn, signUp, signOut } from '@/services/supabase';
+// [CLOUD DISABLED] import { testConnection as testCloud, initCloudStore } from '@/services/cloudStore';
 import { loadAiApiKey, storeAiApiKey } from '@/services/aiConfig';
-import { getConflicts, resolveConflict, type ConflictRow } from '@/services/syncService';
-import { useSyncStore } from '@/stores/syncStore';
+// [CLOUD DISABLED] import { getConflicts, resolveConflict, type ConflictRow } from '@/services/syncService';
+// [CLOUD DISABLED] import { useSyncStore } from '@/stores/syncStore';
 
 const $q = useQuasar();
 
 const darkMode = ref(false);
 const compressImages = ref(true);
-const showKey = ref(false);
+// [CLOUD DISABLED] const showKey = ref(false);
 
+/*
+// [CLOUD DISABLED] Supabase auth + cloud storage refs
 const supabaseUrl = ref('');
 const supabaseAnonKey = ref('');
 const authEmail = ref('');
@@ -148,10 +156,6 @@ const authPassword = ref('');
 const authLoading = ref(false);
 const sessionUser = ref<{ email?: string } | null>(null);
 const supabaseReady = computed(() => !!supabaseUrl.value && !!supabaseAnonKey.value);
-
-const aiEndpoint = ref('');
-const aiModel = ref('');
-const aiApiKey = ref('');
 
 const cloudEndpoint = ref('');
 const cloudRegion = ref('auto');
@@ -166,32 +170,37 @@ const cloudReady = computed(() => !!cloudEndpoint.value && !!cloudBucket.value &
 
 const syncStore = useSyncStore();
 const conflicts = ref<ConflictRow[]>([]);
+*/
+
+const aiEndpoint = ref('');
+const aiModel = ref('');
+const aiApiKey = ref('');
 
 onMounted(async () => {
   darkMode.value = $q.dark.isActive;
   compressImages.value = $q.localStorage.getItem('compressImages') !== 'false';
-  supabaseUrl.value = $q.localStorage.getItem('supabaseUrl') as string || '';
-  supabaseAnonKey.value = $q.localStorage.getItem('supabaseAnonKey') as string || '';
+  // [CLOUD DISABLED] supabaseUrl.value = $q.localStorage.getItem('supabaseUrl') as string || '';
+  // [CLOUD DISABLED] supabaseAnonKey.value = $q.localStorage.getItem('supabaseAnonKey') as string || '';
   aiEndpoint.value = $q.localStorage.getItem('aiEndpoint') as string || '';
   aiModel.value = $q.localStorage.getItem('aiModel') as string || '';
   aiApiKey.value = await loadAiApiKey();
-  cloudEndpoint.value = $q.localStorage.getItem('cloudEndpoint') as string || '';
-  cloudRegion.value = $q.localStorage.getItem('cloudRegion') as string || 'auto';
-  cloudBucket.value = $q.localStorage.getItem('cloudBucket') as string || '';
-  cloudAccessKey.value = $q.localStorage.getItem('cloudAccessKey') as string || '';
-  cloudSecretKey.value = $q.localStorage.getItem('cloudSecretKey') as string || '';
-  cloudPublicUrl.value = $q.localStorage.getItem('cloudPublicUrl') as string || '';
+  // [CLOUD DISABLED] cloudEndpoint.value = $q.localStorage.getItem('cloudEndpoint') as string || '';
+  // [CLOUD DISABLED] cloudRegion.value = $q.localStorage.getItem('cloudRegion') as string || 'auto';
+  // [CLOUD DISABLED] cloudBucket.value = $q.localStorage.getItem('cloudBucket') as string || '';
+  // [CLOUD DISABLED] cloudAccessKey.value = $q.localStorage.getItem('cloudAccessKey') as string || '';
+  // [CLOUD DISABLED] cloudSecretKey.value = $q.localStorage.getItem('cloudSecretKey') as string || '';
+  // [CLOUD DISABLED] cloudPublicUrl.value = $q.localStorage.getItem('cloudPublicUrl') as string || '';
 
-  if (supabaseUrl.value && supabaseAnonKey.value) {
-    createSupabaseClient(supabaseUrl.value, supabaseAnonKey.value);
-    const user = await restoreSession();
-    if (user) {
-      sessionUser.value = { email: user.email ?? undefined };
-    }
-  }
+  // [CLOUD DISABLED] if (supabaseUrl.value && supabaseAnonKey.value) {
+  //   createSupabaseClient(supabaseUrl.value, supabaseAnonKey.value);
+  //   const user = await restoreSession();
+  //   if (user) {
+  //     sessionUser.value = { email: user.email ?? undefined };
+  //   }
+  // }
 
-  conflicts.value = await getConflicts();
-  await syncStore.loadConflictCount();
+  // [CLOUD DISABLED] conflicts.value = await getConflicts();
+  // [CLOUD DISABLED] await syncStore.loadConflictCount();
 });
 
 function toggleDark(val: boolean) {
@@ -199,6 +208,8 @@ function toggleDark(val: boolean) {
   $q.localStorage.set('darkMode', val);
 }
 
+/*
+// [CLOUD DISABLED] Supabase auth + cloud storage functions
 async function login() {
   authLoading.value = true;
   try {
@@ -288,31 +299,32 @@ async function handleResolve(id: string, action: 'local' | 'remote' | 'dismiss')
     $q.notify({ type: 'negative', message: `操作失败：${e?.message || e}`, timeout: 3000 });
   }
 }
+*/
 
 async function saveSettings() {
   $q.localStorage.set('compressImages', compressImages.value);
-  $q.localStorage.set('supabaseUrl', supabaseUrl.value);
-  $q.localStorage.set('supabaseAnonKey', supabaseAnonKey.value);
+  // [CLOUD DISABLED] $q.localStorage.set('supabaseUrl', supabaseUrl.value);
+  // [CLOUD DISABLED] $q.localStorage.set('supabaseAnonKey', supabaseAnonKey.value);
   $q.localStorage.set('aiEndpoint', aiEndpoint.value);
   $q.localStorage.set('aiModel', aiModel.value);
   await storeAiApiKey(aiApiKey.value);
-  $q.localStorage.set('cloudEndpoint', cloudEndpoint.value);
-  $q.localStorage.set('cloudRegion', cloudRegion.value);
-  $q.localStorage.set('cloudBucket', cloudBucket.value);
-  $q.localStorage.set('cloudAccessKey', cloudAccessKey.value);
-  $q.localStorage.set('cloudSecretKey', cloudSecretKey.value);
-  $q.localStorage.set('cloudPublicUrl', cloudPublicUrl.value);
-  // Init cloud store immediately (no restart needed)
-  if (cloudEndpoint.value && cloudBucket.value && cloudAccessKey.value && cloudSecretKey.value) {
-    initCloudStore({
-      endpoint: cloudEndpoint.value,
-      region: cloudRegion.value || 'auto',
-      bucket: cloudBucket.value,
-      accessKey: cloudAccessKey.value,
-      secretKey: cloudSecretKey.value,
-      publicUrlBase: cloudPublicUrl.value || undefined,
-    });
-  }
+  // [CLOUD DISABLED] $q.localStorage.set('cloudEndpoint', cloudEndpoint.value);
+  // [CLOUD DISABLED] $q.localStorage.set('cloudRegion', cloudRegion.value);
+  // [CLOUD DISABLED] $q.localStorage.set('cloudBucket', cloudBucket.value);
+  // [CLOUD DISABLED] $q.localStorage.set('cloudAccessKey', cloudAccessKey.value);
+  // [CLOUD DISABLED] $q.localStorage.set('cloudSecretKey', cloudSecretKey.value);
+  // [CLOUD DISABLED] $q.localStorage.set('cloudPublicUrl', cloudPublicUrl.value);
+  // [CLOUD DISABLED] Init cloud store immediately (no restart needed)
+  // if (cloudEndpoint.value && cloudBucket.value && cloudAccessKey.value && cloudSecretKey.value) {
+  //   initCloudStore({
+  //     endpoint: cloudEndpoint.value,
+  //     region: cloudRegion.value || 'auto',
+  //     bucket: cloudBucket.value,
+  //     accessKey: cloudAccessKey.value,
+  //     secretKey: cloudSecretKey.value,
+  //     publicUrlBase: cloudPublicUrl.value || undefined,
+  //   });
+  // }
   $q.notify({ type: 'positive', message: '设置已保存', timeout: 1500 });
 }
 </script>

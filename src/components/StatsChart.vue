@@ -1,8 +1,26 @@
 <template>
-  <div>
-    <div ref="chartRef" style="width: 100%; height: 300px"></div>
+  <div class="relative" style="width: 100%; height: 300px">
+    <div ref="chartRef" style="width: 100%; height: 100%"></div>
+    <div
+      v-if="props.type === 'ring' && props.centerLabel"
+      class="absolute-center text-center pointer-events-none"
+    >
+      <div class="text-h4 text-weight-bold">{{ props.centerLabel }}</div>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.relative {
+  position: relative;
+}
+.absolute-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+</style>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue';
@@ -15,9 +33,17 @@ const props = withDefaults(defineProps<{
   type: 'line' | 'pie' | 'ring' | 'bar';
   data: any;
   title?: string;
+  centerLabel?: string;
+  colors?: string[];
 }>(), {
   title: '',
+  centerLabel: '',
+  colors: () => [],
 });
+
+const emit = defineEmits<{
+  'sector-click': [name: string];
+}>();
 
 let chart: any = null;
 
@@ -54,6 +80,11 @@ function renderChart() {
         ...baseOption,
         series: [{ type: 'pie', data: props.data, radius: '50%', label: { color: textColor } }],
       });
+      // Click handler for drill-down
+      chart.off('click');
+      chart.on('click', (params: any) => {
+        if (params.name) emit('sector-click', params.name);
+      });
       break;
     case 'ring':
       chart.setOption({
@@ -71,7 +102,13 @@ function renderChart() {
         ...baseOption,
         xAxis: { type: 'category', data: props.data.labels, axisLabel: { color: textColor } },
         yAxis: { type: 'value', axisLabel: { color: textColor } },
-        series: [{ type: 'bar', data: props.data.values, itemStyle: { color: '#1976D2' } }],
+        series: [{
+          type: 'bar',
+          data: props.data.values,
+          itemStyle: {
+            color: (params: any) => props.colors?.[params.dataIndex] ?? '#1976D2',
+          },
+        }],
       });
       break;
   }

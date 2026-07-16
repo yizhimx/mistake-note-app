@@ -17,6 +17,19 @@
         <q-select v-model="filters.difficulty" :options="difficultyOptions" label="难度" multiple use-chips clearable outlined dense emit-value map-options @clear="filters.difficulty = []" />
       </div>
       <div class="col-12 col-md-4 q-mb-sm q-mb-md-none">
+        <q-select
+          v-model="filters.knowledgePoint"
+          :options="knowledgePointOptions"
+          label="知识点"
+          clearable
+          outlined
+          dense
+          @clear="filters.knowledgePoint = ''"
+          option-value="value"
+          option-label="label"
+        />
+      </div>
+      <div class="col-12 col-md-4 q-mb-sm q-mb-md-none">
         <q-btn label="应用" color="primary" unelevated class="full-width" @click="$q.notify({ type: 'info', message: '已应用筛选', timeout: 1000 })" />
       </div>
     </div>
@@ -241,8 +254,13 @@
       <div class="col-12 col-md-6">
         <q-card flat bordered>
           <q-card-section>
-            <div class="text-weight-medium q-mb-sm">掌握程度分布</div>
-            <StatsChart v-if="masteryData.length > 0" type="ring" :data="masteryData" />
+            <div class="text-weight-medium q-mb-sm">复习完成率</div>
+            <StatsChart
+              v-if="reviewCompletionRate.percent !== undefined"
+              type="ring"
+              :data="[{ name: '已复习', value: reviewCompletionRate.reviewed }, { name: '未复习', value: reviewCompletionRate.pending }]"
+              :centerLabel="reviewCompletionRate.percent + '%'"
+            />
             <div v-else class="text-center q-pa-lg text-grey">暂无数据</div>
           </q-card-section>
         </q-card>
@@ -250,8 +268,13 @@
       <div class="col-12 col-md-6">
         <q-card flat bordered>
           <q-card-section>
-            <div class="text-weight-medium q-mb-sm">难度分布</div>
-            <StatsChart v-if="difficultyData.length > 0" type="pie" :data="difficultyData" />
+            <div class="text-weight-medium q-mb-sm">知识点分布</div>
+            <StatsChart
+              v-if="knowledgePointData.length > 0"
+              type="pie"
+              :data="knowledgePointData"
+              @sector-click="onKnowledgePointClick"
+            />
             <div v-else class="text-center q-pa-lg text-grey">暂无数据</div>
           </q-card-section>
         </q-card>
@@ -262,8 +285,13 @@
       <div class="col-12">
         <q-card flat bordered>
           <q-card-section>
-            <div class="text-weight-medium q-mb-sm">科目分布</div>
-            <StatsChart v-if="subjectLabels.length > 0" type="bar" :data="{ labels: subjectLabels, values: subjectValues }" />
+            <div class="text-weight-medium q-mb-sm">掌握度分布</div>
+            <StatsChart
+              v-if="masteryBarData.values.some(v => v > 0)"
+              type="bar"
+              :data="masteryBarData"
+              :colors="masteryColors"
+            />
             <div v-else class="text-center q-pa-lg text-grey">暂无数据</div>
           </q-card-section>
         </q-card>
@@ -274,8 +302,12 @@
       <div class="col-12">
         <q-card flat bordered>
           <q-card-section>
-            <div class="text-weight-medium q-mb-sm">近期复习趋势</div>
-            <StatsChart v-if="trendLabels.length > 0" type="line" :data="{ labels: trendLabels, values: trendValues }" />
+            <div class="text-weight-medium q-mb-sm">每周新增趋势</div>
+            <StatsChart
+              v-if="weeklyNewTrendData.values.some(v => v > 0)"
+              type="line"
+              :data="weeklyNewTrendData"
+            />
             <div v-else class="text-center q-pa-lg text-grey">暂无数据</div>
           </q-card-section>
         </q-card>
@@ -337,14 +369,24 @@ const difficultyOptions = [
   { label: '5 星', value: 5 },
 ];
 
+const knowledgePointOptions = computed(() => {
+  const set = new Set<string>();
+  for (const m of mistakeStore.mistakes) {
+    (m.knowledgePoints || []).forEach(k => set.add(k));
+    (m.knowledgeAreas || []).forEach(k => set.add(k));
+  }
+  return Array.from(set).map(v => ({ label: v, value: v }));
+});
+
 const showFilter = ref(true);
 
 const filters = reactive({
   subject: [] as string[],
   difficulty: [] as number[],
+  knowledgePoint: '' as string,
 });
 
-const hasFilter = computed(() => filters.subject.length > 0 || filters.difficulty.length > 0);
+const hasFilter = computed(() => filters.subject.length > 0 || filters.difficulty.length > 0 || !!filters.knowledgePoint);
 
 const filtered = computed(() => {
   let items = mistakeStore.mistakes;
@@ -353,6 +395,12 @@ const filtered = computed(() => {
   }
   if (filters.difficulty.length > 0) {
     items = items.filter(m => filters.difficulty.includes(Number(m.difficulty) || 0));
+  }
+  if (filters.knowledgePoint) {
+    items = items.filter(m =>
+      (m.knowledgePoints || []).includes(filters.knowledgePoint) ||
+      (m.knowledgeAreas || []).includes(filters.knowledgePoint)
+    );
   }
   return items;
 });
@@ -505,7 +553,7 @@ function goToDetail(e: CalEvent) {
   });
 }
 
-// ── 统计（沿用原有逻辑）──
+// ── 统计（对齐提示词 3.6）──
 const stats = computed(() => {
   const total = filtered.value.length;
   const reviewed = filtered.value.filter(m => m.reviewCount > 0).length;
@@ -526,7 +574,20 @@ const smoothRateColor = computed(() => {
   return 'text-negative';
 });
 
-const masteryData = computed(() => {
+// 复习完成率进度环：reviewed / total
+const reviewCompletionRate = computed(() => {
+  const total = filtered.value.length;
+  const reviewed = filtered.value.filter(m => m.reviewCount > 0).length;
+  const percent = total > 0 ? Math.round((reviewed / total) * 100) : 0;
+  return {
+    reviewed,
+    pending: total - reviewed,
+    percent,
+  };
+});
+
+// 掌握度分布柱状图：生疏/犹豫/顺利/未掌握
+const masteryBarData = computed(() => {
   const counts: Record<string, number> = { 生疏: 0, 犹豫: 0, 顺利: 0, 未掌握: 0 };
   for (const m of filtered.value) {
     if (!m.masteryLevel) counts['未掌握'] = (counts['未掌握'] ?? 0) + 1;
@@ -534,54 +595,67 @@ const masteryData = computed(() => {
     else if (m.masteryLevel === 'hesitant') counts['犹豫'] = (counts['犹豫'] ?? 0) + 1;
     else if (m.masteryLevel === 'smooth') counts['顺利'] = (counts['顺利'] ?? 0) + 1;
   }
-  return Object.entries(counts).filter(([, v]) => v > 0).map(([k, v]) => ({ name: k, value: v }));
+  const labels = ['生疏', '犹豫', '顺利', '未掌握'];
+  const values = labels.map(k => counts[k] ?? 0);
+  return { labels, values };
 });
 
-const difficultyData = computed(() => {
+// 知识点分布饼图：优先 knowledgePoints，回退 knowledgeAreas
+const knowledgePointData = computed(() => {
   const counts: Record<string, number> = {};
   for (const m of filtered.value) {
-    const key = m.difficulty || '未设置';
-    counts[key] = (counts[key] || 0) + 1;
+    const points = (m.knowledgePoints && m.knowledgePoints.length > 0)
+      ? m.knowledgePoints
+      : (m.knowledgeAreas || []);
+    for (const kp of points) {
+      counts[kp] = (counts[kp] || 0) + 1;
+    }
   }
   return Object.entries(counts).map(([k, v]) => ({ name: k, value: v }));
 });
 
-const subjectLabels = computed(() => {
-  const map = subjectCounts.value;
-  return Object.keys(map);
-});
-
-const subjectValues = computed(() => {
-  const map = subjectCounts.value;
-  return Object.values(map);
-});
-
-const subjectCounts = computed(() => {
-  const counts: Record<string, number> = {};
-  for (const m of filtered.value) {
-    const key = m.subject || '未分类';
-    counts[key] = (counts[key] || 0) + 1;
+// 每周新增趋势折线图：最近 7 个 ISO 周，按 createdAt 聚合
+const weeklyNewTrendData = computed(() => {
+  const weekCounts: Record<string, number> = {};
+  const now = new Date();
+  // 生成最近 7 个周一的日期键
+  const weekKeys: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - (d.getDay() + 6) % 7 - i * 7); // 本周周一往前推 i 周
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    weekKeys.push(toLocalDateStr(monday));
   }
-  return counts;
+  weekKeys.forEach(k => { weekCounts[k] = 0; });
+
+  for (const m of filtered.value) {
+    const created = new Date(m.createdAt);
+    const monday = new Date(created);
+    monday.setDate(created.getDate() - ((created.getDay() + 6) % 7));
+    const key = toLocalDateStr(monday);
+    if (weekCounts[key] !== undefined) {
+      weekCounts[key]++;
+    }
+  }
+
+  const labels = weekKeys.map(k => `${k.slice(5)}周`);
+  const values = weekKeys.map(k => weekCounts[k] ?? 0);
+  return { labels, values };
 });
 
-const trendLabels = computed(() => {
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    return toLocalDateStr(d);
-  });
-});
-
-const trendValues = computed(() => {
-  return trendLabels.value.map(date => {
-    return filtered.value.filter(m => m.lastReviewAt && toDateKey(m.lastReviewAt) === date).length;
-  });
-});
+// 柱状图语义化颜色：生疏=红, 犹豫=橙, 顺利=绿, 未掌握=灰
+const masteryColors = ['#E53935', '#FB8C00', '#43A047', '#9E9E9E'];
 
 function clearFilters() {
   filters.subject = [];
   filters.difficulty = [];
+  filters.knowledgePoint = '';
+}
+
+function onKnowledgePointClick(name: string) {
+  filters.knowledgePoint = name;
+  $q.notify({ type: 'info', message: `已按知识点筛选: ${name}`, timeout: 1500 });
 }
 
 onMounted(async () => {
