@@ -47,6 +47,12 @@ function parseQuestionsJson(text: string): SplitQuestion[] {
     .filter((q) => q.content);
 }
 
+/** Split OCR output by the --- delimiter into individual question texts */
+function splitOcrText(text: string): string[] {
+  const parts = text.split(/\n-{3,}\n/).map(s => s.trim()).filter(Boolean);
+  return parts.length > 1 ? parts : [text];
+}
+
 async function splitIntoQuestions(ocrText: string, signal?: AbortSignal): Promise<SplitQuestion[]> {
   const prompt = `你正在整理错题。以下是从一张试卷或练习册页面识别出的文字内容，该页面可能包含多道独立题目。请将整页内容拆分为若干道独立的错题，每道错题应是一个完整的题目。
 
@@ -151,13 +157,63 @@ ${item.imageData}`;
         throw new Error('OCR 未识别到题目内容，请确认图片清晰度');
       }
 
+      // Split OCR output by --- delimiter into individual questions
+      const questionTexts = splitOcrText(content);
+      const isMultiQuestion = questionTexts.length > 1;
+
       let questions: SplitQuestion[];
-      if (item.mistakeId) {
+
+      if (isMultiQuestion) {
+        // Multiple questions found — process each one individually
+        questions = [];
+        for (const qText of questionTexts) {
+          checkAbort(signal);
+          let difficulty = 3;
+          let subject = '';
+          let knowledgeAreas: string[] = [];
+          let answer = '';
+
+          // Extract structured info (subject, difficulty, knowledge areas)
+          for (let attempt = 0; attempt < 2; attempt++) {
+            checkAbort(signal);
+            const prompt = attempt === 0
+              ? buildTagsPrompt(qText)
+              : `请严格按以下 JSON 格式输出，不要包含任何其他文字：\n{\n  "subject": "科目",\n  "difficulty": 3,\n  "knowledgeAreas": "考点1，考点2"\n}\n\n题目内容：\n${qText}`;
+            try {
+              const res = await directTextChat(prompt, { temperature: 0.3, systemPrompt: 'You are a teaching expert.', signal: signal ?? null });
+              checkAbort(signal);
+              const tags = parseTagsJson(res);
+              difficulty = tags.difficulty;
+              subject = tags.subject;
+              knowledgeAreas = tags.knowledgeAreas;
+              break;
+            } catch { /* retry with simpler prompt */ }
+          }
+
+          // Generate analysis
+          try {
+            const analysisPrompt = `你是一位严谨的学科教师，请解析以下错题。返回格式：
+
+## 正确答案
+（用 Markdown 写出正确答案）
+
+## 解题步骤
+（分步骤详细说明解题过程）
+
+题目内容：
+${qText}`;
+            answer = await directTextChat(analysisPrompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。', signal: signal ?? null });
+            checkAbort(signal);
+          } catch { /* analysis failed */ }
+
+          questions.push({ content: qText, subject, difficulty, knowledgeAreas, answer });
+        }
+      } else if (item.mistakeId) {
+        // Single question linked to a mistake — existing logic
         let difficulty = 3;
         let subject = '';
         let knowledgeAreas: string[] = [];
         let answer = '';
-        // Try up to 2 times to get structured info from AI
         for (let attempt = 0; attempt < 2; attempt++) {
           checkAbort(signal);
           const prompt = attempt === 0
@@ -170,12 +226,9 @@ ${item.imageData}`;
             difficulty = tags.difficulty;
             subject = tags.subject;
             knowledgeAreas = tags.knowledgeAreas;
-            break; // success
-          } catch {
-            // retry with simpler prompt
-          }
+            break;
+          } catch { /* retry */ }
         }
-        // Generate analysis for the single question
         try {
           const analysisPrompt = `你是一位严谨的学科教师，请解析以下错题。返回格式：
 
@@ -187,11 +240,12 @@ ${item.imageData}`;
 
 题目内容：
 ${content}`;
-answer = await directTextChat(analysisPrompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。', signal: signal ?? null });
+          answer = await directTextChat(analysisPrompt, { temperature: 0.3, systemPrompt: '你是一位严谨的学科教师，返回格式规范的 Markdown。', signal: signal ?? null });
           checkAbort(signal);
-        } catch { /* analysis failed, answer stays empty */ }
+        } catch { /* analysis failed */ }
         questions = [{ content, subject, difficulty, knowledgeAreas, answer }];
       } else {
+        // Single question, no linked mistake — use splitIntoQuestions for structured data
         questions = await splitIntoQuestions(content, signal);
         checkAbort(signal);
         // Generate analysis for each question
@@ -242,6 +296,62 @@ ${q.content}`;
         } catch {
           // silent
         }
+      }
+
+      // If multiple questions and linked to a mistake, auto-create mistakes for extra questions
+      if (isMultiQuestion && item.mistakeId && questions.length > 1) {
+        try {
+          const { addMistake } = await import('@/services/mistakeService');
+          const { uid } = await import('quasar');
+          const now = new Date().toISOString();
+          // Save the image once and reference it in each extra mistake
+          let imageRef = '';
+          if (item.imageData) {
+            try {
+              if (item.imageData.startsWith('local:')) {
+                imageRef = `![原始图片](${item.imageData})`;
+              } else {
+                const { saveImage } = await import('@/services/imageStore');
+                const ref = await saveImage(item.imageData);
+                imageRef = `![原始图片](${ref})`;
+              }
+            } catch { /* ignore */ }
+          }
+          for (let i = 1; i < questions.length; i++) {
+            checkAbort(signal);
+            const q = questions[i]!;
+            const newId = uid();
+            const record = {
+              id: newId,
+              title: (q.content || '').split('\n')[0]?.replace(/[#*`$]/g, '').trim().slice(0, 30) || `错题 ${now.slice(0, 10)}`,
+              content: q.content + (imageRef ? `\n\n${imageRef}` : ''),
+              imageUrls: [],
+              tags: [],
+              subject: q.subject || '',
+              answer: q.answer || '',
+              answerImages: [],
+              difficulty: q.difficulty || 0,
+              knowledgePoints: [],
+              year: '',
+              knowledgeAreas: q.knowledgeAreas || [],
+              sourcePaperType: '',
+              sourcePaperName: '',
+              questionNumber: '',
+              notes: '',
+              aiAnalysis: null,
+              ocrText: null,
+              createdAt: now,
+              updatedAt: now,
+              reviewCount: 0,
+              lastReviewAt: null,
+              masteryLevel: null,
+              sm2Data: null,
+              linkedNoteIds: [],
+              synced: false,
+            };
+            await addMistake(record as any);
+          }
+        } catch { /* silent — extra questions failed to auto-create */ }
       }
     }
   } catch (e: any) {
