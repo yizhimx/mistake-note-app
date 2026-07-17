@@ -56,6 +56,8 @@ function splitOcrText(text: string): string[] {
 async function splitIntoQuestions(ocrText: string, signal?: AbortSignal): Promise<SplitQuestion[]> {
   const prompt = `你正在整理错题。以下是从一张试卷或练习册页面识别出的文字内容，该页面可能包含多道独立题目。请将整页内容拆分为若干道独立的错题，每道错题应是一个完整的题目。
 
+OCR 文字中可能包含试卷标题、注意事项等无关信息，请忽略它们，只提取题目内容
+
 每道错题包含：
 - content: 完整的题目内容（Markdown 格式，保留公式与换行）
 - subject: 所属科目（数学、物理、化学、英语、语文、生物、历史、地理、政治），不确定则为空字符串

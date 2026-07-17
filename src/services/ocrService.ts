@@ -13,6 +13,7 @@ export async function recognizeText(dataUrl: string, signal?: AbortSignal): Prom
       '- 数学公式用 LaTeX 行内 $...$ 或块级 $$...$$ 表示。\n' +
       '- 禁止解题、禁止推理、禁止补全、禁止生成答案与解析。\n' +
       '- 只输出题目本身的 Markdown 文本，不要用代码块包裹，不要输出多余解释。\n' +
+      '- 忽略试卷标题、无关标记、注意事项、答卷须知等与题目无关的文字，只提取题目正文。\n' +
       '- 如果图片中包含多道独立题目，请用 "\\n---\\n" 分隔每道题。';
     return await directVisionChat(prompt, dataUrl, { temperature: 0.2, signal: signal ?? null });
   } catch (e) {
