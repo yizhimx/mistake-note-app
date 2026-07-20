@@ -1,6 +1,6 @@
 {
   "name": "mistake-note-app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "跨端错题整理与智能学习助手",
   "productName": "MistakeNote",
   "type": "module",
